@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Arduino.h>
 #include <time.h>
 
 struct RemoteSnapshot
@@ -20,3 +21,4 @@ bool initWiFi();
 bool initTime();
 void initFirebase();
 void uploadData(float temperature, float humidity, int gas, float deltaGas, float gasRelative, int state, const tm &info);
+bool readRemoteSnapshot(const char *deviceId, RemoteSnapshot &snapshot);

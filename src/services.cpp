@@ -14,6 +14,56 @@ namespace
   FirebaseData fbdo;
   FirebaseAuth auth;
   FirebaseConfig config;
+
+  bool getRequiredFloat(FirebaseJson &json, const char *key, float &value)
+  {
+    FirebaseJsonData result;
+    json.get(result, key);
+    if (!result.success)
+      return false;
+
+    if (result.type == "int")
+      value = (float)result.to<int>();
+    else if (result.type == "double")
+      value = (float)result.to<double>();
+    else
+      value = result.to<float>();
+
+    return true;
+  }
+
+  bool getRequiredInt(FirebaseJson &json, const char *key, int &value)
+  {
+    FirebaseJsonData result;
+    json.get(result, key);
+    if (!result.success)
+      return false;
+
+    value = result.to<int>();
+    return true;
+  }
+
+  bool getOptionalString(FirebaseJson &json, const char *key, String &value)
+  {
+    FirebaseJsonData result;
+    json.get(result, key);
+    if (!result.success)
+      return false;
+
+    value = result.to<String>();
+    return true;
+  }
+
+  bool getOptionalULong(FirebaseJson &json, const char *key, unsigned long &value)
+  {
+    FirebaseJsonData result;
+    json.get(result, key);
+    if (!result.success)
+      return false;
+
+    value = result.to<unsigned long>();
+    return true;
+  }
 }
 
 bool initWiFi()
@@ -124,38 +174,32 @@ void uploadData(float temperature,
   if (!Firebase.ready())
     return;
 
-  // Hiển thị thời gian đầy đủ
-  char timeString[32];
-  strftime(
-      timeString,
-      sizeof(timeString),
-      "%H:%M:%S %d/%m/%Y",
-      &info);
-
-  // Chỉ lấy ngày-tháng-năm để làm folder
+  // Use YYYY-MM-DD so date folders sort correctly
   char dateString[16];
   strftime(
       dateString,
       sizeof(dateString),
-      "%d-%m-%Y",
+      "%Y-%m-%d",
       &info);
 
-  long ts = time(NULL);
+  // Use HH-MM-SS as child folder name
+  char timeKey[16];
+  strftime(
+      timeKey,
+      sizeof(timeKey),
+      "%H-%M-%S",
+      &info);
 
   char path[120];
   snprintf(
       path,
       sizeof(path),
-      "/devices/%s/%s/%ld",
+      "/devices/%s/%s/%s",
       DEVICE_ID,
       dateString,
-      ts);
+      timeKey);
 
   FirebaseJson json;
-
-  json.set("device_id", DEVICE_ID);
-  json.set("date", dateString);
-  json.set("timestamp", timeString);
 
   json.set("temperature", temperature);
   json.set("humidity", humidity);
@@ -168,7 +212,7 @@ void uploadData(float temperature,
   {
     Serial.printf("Upload OK [%s_%s]\n", DEVICE_ID, dateString);
     Serial.print("Time: ");
-    Serial.println(timeString);
+    Serial.println(timeKey);
     Serial.println("----------------------------------------------");
   }
   else
@@ -176,4 +220,56 @@ void uploadData(float temperature,
     Serial.println("Upload Failed");
     Serial.println(fbdo.errorReason());
   }
+}
+
+bool readRemoteSnapshot(const char *deviceId, RemoteSnapshot &snapshot)
+{
+  snapshot.deviceId = deviceId;
+  snapshot.timeText = "";
+  snapshot.epoch = 0;
+  snapshot.temperature = 0.0f;
+  snapshot.humidity = 0.0f;
+  snapshot.gas = 0;
+  snapshot.deltaGas = 0.0f;
+  snapshot.gasRelative = 0.0f;
+  snapshot.state = 0;
+  snapshot.valid = false;
+
+  if (!Firebase.ready())
+    return false;
+
+  char path[64];
+  snprintf(
+      path,
+      sizeof(path),
+      "/latest_%s",
+      deviceId);
+
+  FirebaseJson json;
+  if (!Firebase.RTDB.getJSON(&fbdo, path, &json))
+  {
+    Serial.printf("Read remote failed [%s]\n", path);
+    Serial.println(fbdo.errorReason());
+    return false;
+  }
+
+  bool ok = true;
+  ok &= getRequiredFloat(json, "temperature", snapshot.temperature);
+  ok &= getRequiredFloat(json, "humidity", snapshot.humidity);
+  ok &= getRequiredInt(json, "gas", snapshot.gas);
+  ok &= getRequiredFloat(json, "delta_gas", snapshot.deltaGas);
+  ok &= getRequiredFloat(json, "gas_relative", snapshot.gasRelative);
+
+  if (!getRequiredInt(json, "label", snapshot.state))
+    ok &= getRequiredInt(json, "state", snapshot.state);
+
+  getOptionalString(json, "timestamp", snapshot.timeText);
+  getOptionalString(json, "time", snapshot.timeText);
+  getOptionalULong(json, "epoch", snapshot.epoch);
+
+  snapshot.valid = ok;
+  if (!ok)
+    Serial.printf("Remote data invalid [%s]\n", path);
+
+  return ok;
 }

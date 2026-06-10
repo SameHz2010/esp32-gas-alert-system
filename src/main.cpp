@@ -1,33 +1,34 @@
-#include <Arduino.h>
-#include <Wire.h>
 #include <time.h>
 #include "config.h"
 #include "dht20.h"
 #include "services.h"
 #include "monitoring.h"
 #include "ST7789.h"
-
-#define MAX_POINTS 60 // 60 giây dữ liệu
-#define STEP_X 4      // Mỗi giây cách nhau 4 pixel (4 * 60 = 240px)
-#define WAVE_X 0
-#define WAVE_Y 42
-#define WAVE_W 240
-#define WAVE_H 160 // Chiều cao vùng sóng
-
-int gas_history[MAX_POINTS]; // Bộ đệm vòng lưu lịch sử gas
-int head = 0;                // Con trỏ đầu bộ đệm
-int p_count = 0;             // Số lượng điểm hiện có
-
-ST7789 lcd(5, 2, 4, 15); // CS, DC, RST, BLK
+#include "waveform.h"
 
 float gas_prev = 0, gas_avg = 0;
-unsigned long last_sms_time = 0;
 unsigned long last_call_time = 0;
 unsigned long last_loop_time = 0;
+unsigned long last_remote_fetch_time = 0;
 bool wifi_ready = false;
 bool time_ready = false;
 bool firebase_ready = false;
 bool sim_ready = false;
+
+ST7789 lcd(ST7789_CS_PIN, ST7789_DC_PIN, ST7789_RST_PIN, ST7789_BLK_PIN);
+RemoteSnapshot remoteNode1;
+RemoteSnapshot remoteNode2;
+
+struct RoomSmsAlert
+{
+  const char *deviceId;
+  bool alertFlag;
+  unsigned long lastSmsTime;
+};
+
+RoomSmsAlert room1Sms = {DEVICE_ID, false, 0};
+RoomSmsAlert room2Sms = {REMOTE_NODE_1_ID, false, 0};
+RoomSmsAlert room3Sms = {REMOTE_NODE_2_ID, false, 0};
 
 void ensureServices()
 {
@@ -44,85 +45,72 @@ void ensureServices()
   }
 }
 
-// --- Hàm vẽ khung và lưới cho dạng sóng ---
-void drawWaveformGrid()
+void printRemoteSnapshot(const RemoteSnapshot &snapshot)
 {
-  // Vẽ khung trắng
-  lcd.fillRect(WAVE_X - 1, WAVE_Y - 1, WAVE_W + 2, WAVE_H + 2, COLOR_WHITE);
-  // Vẽ nền đen bên trong
-  lcd.fillRect(WAVE_X, WAVE_Y, WAVE_W, WAVE_H, COLOR_BLACK);
+  if (!snapshot.valid)
+    return;
 
-  // Vẽ lưới xám mờ (tùy chọn)
-  for (int i = 1; i < 4; i++)
+  Serial.printf(
+      "Remote [%s] Temp=%.2fC Hum=%.2f%% Gas=%d Delta=%.2f Relative=%.2f State=%d\n",
+      snapshot.deviceId.c_str(),
+      snapshot.temperature,
+      snapshot.humidity,
+      snapshot.gas,
+      snapshot.deltaGas,
+      snapshot.gasRelative,
+      snapshot.state);
+}
+
+void fetchRemoteNodes()
+{
+  if (!firebase_ready)
+    return;
+
+  if (millis() - last_remote_fetch_time < REMOTE_FETCH_INTERVAL_MS)
+    return;
+
+  last_remote_fetch_time = millis();
+
+  bool node1Ok = readRemoteSnapshot(REMOTE_NODE_1_ID, remoteNode1);
+  bool node2Ok = readRemoteSnapshot(REMOTE_NODE_2_ID, remoteNode2);
+
+  if (node1Ok || node2Ok)
   {
-    int y_grid = WAVE_Y + (WAVE_H * i / 4);
-    lcd.drawLine(WAVE_X, y_grid, WAVE_X + WAVE_W, y_grid, COLOR_GRAY);
+    Serial.println("REMOTE NODE DATA");
+    printRemoteSnapshot(remoteNode1);
+    printRemoteSnapshot(remoteNode2);
+    Serial.println("----------------------------------------------");
   }
 }
 
-void updateWaveform(int new_gas_val, int state, struct tm *timeinfo)
+bool smsCooldownReady(const RoomSmsAlert &room)
 {
-  // 1. Cập nhật dữ liệu vào bộ đệm vòng
-  gas_history[head] = new_gas_val;
-  head = (head + 1) % MAX_POINTS;
-  if (p_count < MAX_POINTS)
-    p_count++;
+  return room.lastSmsTime == 0 || millis() - room.lastSmsTime >= SMS_COOLDOWN;
+}
 
-  // 2. Tìm Min-Max để Auto-Scale (Zoom biên độ)
-  int min_val = 4095, max_val = 0;
-  for (int i = 0; i < p_count; i++)
+void processRoomSmsAlert(RoomSmsAlert &room, bool dataValid, int gas, int state)
+{
+  if (!dataValid || state != 3)
   {
-    if (gas_history[i] < min_val)
-      min_val = gas_history[i];
-    if (gas_history[i] > max_val)
-      max_val = gas_history[i];
+    room.alertFlag = false;
+    return;
   }
 
-  // Zoom cực đại: Nếu gas ổn định, ép range tối thiểu 20 đơn vị để thấy rõ nhiễu sóng
-  int range = (max_val - min_val < 20) ? 20 : (max_val - min_val);
+  if (!room.alertFlag && smsCooldownReady(room))
+    room.alertFlag = true;
 
-  // 3. CHỈ XÓA VÙNG LÕI (Không xóa khung trắng và nhãn thời gian cố định)
-  lcd.fillRect(WAVE_X, WAVE_Y, WAVE_W, WAVE_H, COLOR_BLACK);
+  if (!room.alertFlag)
+    return;
 
-  // Vẽ lưới mờ (mỗi 15s = 60px)
-  for (int i = 60; i < 240; i += 60)
-  {
-    lcd.drawLine(i, WAVE_Y, i, WAVE_Y + WAVE_H, 0x1082); // Màu xám tối
-  }
+  if (sendAlertSms(room.deviceId, gas, room.lastSmsTime, state))
+    room.alertFlag = false;
+}
 
-  // 4. LOGIC MÀU SẮC: Bình thường Vàng, Cảnh báo (S3) Đỏ
-  uint16_t waveColor = (state >= 3) ? COLOR_RED : COLOR_YELLOW;
-
-  // 5. Vẽ đường sóng (Làm dày 2 pixel để nhìn to và rõ hơn)
-  for (int i = 0; i < p_count - 1; i++)
-  {
-    int idx0 = (head - p_count + i + MAX_POINTS) % MAX_POINTS;
-    int idx1 = (head - p_count + i + 1 + MAX_POINTS) % MAX_POINTS;
-
-    int x0 = i * STEP_X;
-    int x1 = (i + 1) * STEP_X;
-
-    // Tính toán tọa độ Y dựa trên Min-Max hiện tại
-    int y0 = WAVE_Y + WAVE_H - ((gas_history[idx0] - min_val) * WAVE_H / range);
-    int y1 = WAVE_Y + WAVE_H - ((gas_history[idx1] - min_val) * WAVE_H / range);
-
-    lcd.drawLine(x0, y0, x1, y1, waveColor);
-    lcd.drawLine(x0, y0 + 1, x1, y1 + 1, waveColor); // Vẽ thêm 1 đường để làm dày nét
-  }
-
-  // 6. Cập nhật số liệu Max/Min ở góc đồ thị (Xóa số cũ bằng màu nền đen)
-  char buf[16];
-  sprintf(buf, "MAX:%-4d", max_val);
-  lcd.drawString(180, WAVE_Y + 5, buf, 0x7BEF, COLOR_BLACK);
-  sprintf(buf, "MIN:%-4d", min_val);
-  lcd.drawString(180, WAVE_Y + WAVE_H - 15, buf, 0x7BEF, COLOR_BLACK);
-
-  // 7. Cập nhật Giờ NTP (Vùng cố định dưới cùng)
-  if (timeinfo->tm_year > 0)
-  {
-    sprintf(buf, "%02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
-    lcd.drawString(170, 220, buf, COLOR_CYAN, COLOR_BLACK);
-  }
+void processAllRoomSmsAlerts(int localGas, int localState)
+{
+  processRoomSmsAlert(room1Sms, true, localGas, localState);
+  processRoomSmsAlert(room2Sms, remoteNode1.valid, remoteNode1.gas, remoteNode1.state);
+  processRoomSmsAlert(room3Sms, remoteNode2.valid, remoteNode2.gas, remoteNode2.state);
 }
 
 // MAIN SETUP VA LOOP
@@ -132,18 +120,15 @@ void setup()
   pinMode(RED_LED, OUTPUT);
   pinMode(BUZZER, OUTPUT);
 
-  pinMode(RED_LED, OUTPUT);
-  digitalWrite(RED_LED, LOW); // bật LED
-  delay(2000);
-  digitalWrite(RED_LED, HIGH); // tắt LED
-  delay(2000);
-
   Wire.begin(21, 22);
 
   if (!dht20_init())
+  {
     Serial.println("DHT20 Fail");
+  }
 
   wifi_ready = initWiFi();
+
   if (wifi_ready)
   {
     time_ready = initTime();
@@ -156,22 +141,12 @@ void setup()
   }
 
   sim_ready = initAlertModule();
+
   if (SEND_TEST_SMS_ON_BOOT)
     sendStartupTestSms();
 
-  lcd.begin();
-  lcd.fillScreen(COLOR_BLACK);
+  initWaveformDisplay(lcd);
 
-  lcd.drawRect(WAVE_X, WAVE_Y - 2, WAVE_W, WAVE_H + 4, COLOR_WHITE);
-  lcd.drawLine(0, 212, 240, 212, COLOR_WHITE); // Đường trục X
-  lcd.drawString(2, 220, "-60s", 0x7BEF, COLOR_BLACK);
-  lcd.drawString(105, 220, "-30s", 0x7BEF, COLOR_BLACK);
-
-  for (int i = 0; i < MAX_POINTS; i++)
-    gas_history[i] = 0;
-
-  digitalWrite(RED_LED, LOW); // tắt LED
-  delay(500);
   printf("Setup complete\n");
 }
 
@@ -182,6 +157,7 @@ void loop()
 
   last_loop_time = millis();
   ensureServices();
+  fetchRemoteNodes();
   pollAlertModule();
 
   float temp, hum;
@@ -189,15 +165,15 @@ void loop()
   struct tm timeinfo;
   bool dht_ok = dht20_read(&temp, &hum);
   bool time_ok = getLocalTime(&timeinfo);
+  float display_temp = dht_ok ? temp : 25.0f;
+  float display_hum = dht_ok ? hum : 50.0f;
 
   float delta_gas = gas - gas_prev;
   gas_avg = (gas_avg * 0.9f) + (gas * 0.1f);
   float gas_relative = (gas_avg > 0) ? ((float)gas / gas_avg) : 1.0f;
   gas_prev = (float)gas;
 
-  int state = dht_ok
-                  ? detectGasState(temp, hum, gas, delta_gas, gas_relative)
-                  : detectGasState(25.0f, 50.0f, gas, delta_gas, gas_relative);
+  int state = detectGasState(display_temp, display_hum, gas, delta_gas, gas_relative);
   alertControl(state);
 
   static int last_state = -1;
@@ -218,17 +194,17 @@ void loop()
 
   // --- THAY ĐỔI TẠI ĐÂY: Hiện 2 chữ số thập phân ---
   // %6.2f giúp cố định độ rộng để số không bị nhảy vị trí khi thay đổi
-  sprintf(buf, "%.2fC|%.2f%%", temp, hum);
+  sprintf(buf, "%.2fC|%.2f%%", display_temp, display_hum);
 
   // Có thể cần lùi tọa độ X sang trái một chút (từ 135 hoặc 145 về 125)
   // để đủ chỗ hiện thêm các chữ số thập phân
   lcd.drawString(125, 12, buf, textCol, themeCol);
 
   // --- Vẽ dạng sóng 60 giây ---
-  updateWaveform(gas, state, &timeinfo);
+  updateWaveform(lcd, gas, state, &timeinfo);
 
-  if (sim_ready && (state == 3))
-    sendAlertSms(gas, last_sms_time, state);
+  if (sim_ready)
+    processAllRoomSmsAlerts(gas, state);
 
   // if (sim_ready && ENABLE_SIM_CALL_ON_DANGER && state == 3)
   //   placeAlertCall(last_call_time);

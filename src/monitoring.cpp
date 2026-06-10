@@ -215,16 +215,16 @@ void sendStartupTestSms()
   readSIMFeedback(5000);
 }
 
-void sendAlertSms(int gasValue, unsigned long &lastSmsTime, int state)
+bool sendAlertSms(const char *sourceDevice, int gasValue, unsigned long &lastSmsTime, int state)
 {
   if (!simReady)
   {
     Serial.println("SIM SMS skipped: SIM module is not ready");
-    return;
+    return false;
   }
 
   if (lastSmsTime != 0 && millis() - lastSmsTime < SMS_COOLDOWN)
-    return;
+    return false;
 
   Serial.println("<< Send alert SMS");
   simSerial.print("AT+CMGS=\"");
@@ -236,18 +236,29 @@ void sendAlertSms(int gasValue, unsigned long &lastSmsTime, int state)
   if (response.indexOf(">") < 0)
   {
     Serial.println("Alert SMS failed: SIM module did not enter message mode");
-    return;
+    return false;
   }
 
   char alertMsg[128];
-  snprintf(alertMsg, sizeof(alertMsg), "CANH BAO GAS! %s State=%d Gas=%d", DEVICE_ID, state, gasValue);
+  snprintf(alertMsg, sizeof(alertMsg), "CANH BAO GAS! %s State=%d Gas=%d", sourceDevice, state, gasValue);
   simSerial.print(alertMsg);
   delay(300);
   simSerial.write(26);
   delay(3000);
-  readSIMFeedback(5000);
+  String finalResponse = readSIMFeedback(5000);
+  if (!responseHasSuccess(finalResponse))
+  {
+    Serial.println("Alert SMS failed: SIM module did not confirm message send");
+    return false;
+  }
 
   lastSmsTime = millis();
+  return true;
+}
+
+bool sendAlertSms(int gasValue, unsigned long &lastSmsTime, int state)
+{
+  return sendAlertSms(DEVICE_ID, gasValue, lastSmsTime, state);
 }
 
 void placeAlertCall(unsigned long &lastCallTime)
