@@ -1,0 +1,7 @@
+{
+  "databaseUrl": "https://your-project-default-rtdb.firebaseio.com",
+  "databaseSecret": "PASTE_YOUR_DATABASE_SECRET_HERE",
+  "intervalMs": 1000,
+  "timezoneOffsetHours": 7,
+  "rooms": ["room_1", "room_2", "room_3"]
+}

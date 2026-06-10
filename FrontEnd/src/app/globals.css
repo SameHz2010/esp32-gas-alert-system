@@ -1,0 +1,306 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050505;
+  --foreground: #f5f5f4;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@keyframes alert-border-pulse {
+  0%,
+  100% {
+    border-color: rgba(239, 68, 68, 0.35);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2);
+  }
+  50% {
+    border-color: rgba(248, 113, 113, 0.95);
+    box-shadow: 0 0 28px 4px rgba(239, 68, 68, 0.35);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.alert-border-pulse {
+  animation: alert-border-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ping-slow {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  70% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-ping-slow {
+  animation: ping-slow 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(251, 191, 36, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.spinner-step-btn {
+  display: flex;
+  height: 1.25rem;
+  width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  color: #fbbf24;
+  transition: all 0.15s ease;
+}
+
+.spinner-step-btn:hover {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fde68a;
+}
+
+.spinner-step-btn:active {
+  transform: scale(0.92);
+  background: rgba(251, 191, 36, 0.25);
+}
+
+.picker-nav-btn {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: #fbbf24;
+  transition: all 0.15s ease;
+}
+
+.picker-nav-btn:hover {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+}
+
+.picker-time-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.picker-time-scroll::-webkit-scrollbar-thumb {
+  background: rgba(251, 191, 36, 0.3);
+  border-radius: 999px;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.45s ease-out both;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s ease-out both;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.25s ease-out both;
+}
+
+@keyframes dropdown-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dropdown-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-dropdown-down {
+  animation: dropdown-down 0.18s ease-out both;
+}
+
+.animate-dropdown-up {
+  animation: dropdown-up 0.18s ease-out both;
+}
+
+.input-no-spinner::-webkit-outer-spin-button,
+.input-no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input,
+select,
+button {
+  font: inherit;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8) sepia(1) saturate(2) hue-rotate(5deg);
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(251, 191, 36, 0.25);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* Recharts: prevent default light hover overlays */
+.recharts-tooltip-cursor {
+  fill: rgba(251, 146, 60, 0.08) !important;
+}
+
+.recharts-default-tooltip {
+  background: #09090b !important;
+  border: 1px solid rgba(251, 191, 36, 0.35) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+}
+
+.recharts-tooltip-label {
+  color: #fafaf9 !important;
+  font-weight: 600 !important;
+}
+
+.recharts-tooltip-item-name,
+.recharts-tooltip-item-value,
+.recharts-tooltip-item-separator {
+  color: #fde68a !important;
+}
+
+.recharts-active-bar {
+  display: none;
+}
+
+.dialog-preview-scroll {
+  max-height: min(42vh, 280px);
+  overscroll-behavior: contain;
+}
+
+.filter-panel-scroll {
+  max-height: min(72vh, 820px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.filter-panel-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.filter-panel-scroll::-webkit-scrollbar-thumb {
+  background: rgba(251, 191, 36, 0.35);
+  border-radius: 999px;
+}
+
+.filter-panel-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.dialog-preview-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dialog-preview-scroll::-webkit-scrollbar-thumb {
+  background: rgba(251, 191, 36, 0.35);
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-scale-in,
+  .animate-ping-slow,
+  .alert-border-pulse,
+  .loading-shimmer {
+    animation: none !important;
+  }
+
+}
