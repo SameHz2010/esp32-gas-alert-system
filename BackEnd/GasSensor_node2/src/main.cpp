@@ -31,13 +31,26 @@ void setup()
     {
       Serial.println("WiFi connection failed.");
       Serial.println("SSID not found or password may be incorrect.");
-      Serial.println("Retrying...");
+      Serial.println("Retrying in 3 seconds...");
+      delay(3000);
     }
   }
-
+  
   Serial.println("WiFi connected");
 
-  time_ready = initTime();
+  while (!time_ready)
+  {
+    Serial.println("Syncing time...");
+
+    time_ready = initTime();
+
+    if (!time_ready)
+    {
+      Serial.println("Time sync failed.");
+      Serial.println("Retrying in 3 seconds...");
+      delay(3000);
+    }
+  }
 
   initFirebase();
   firebase_ready = true;
