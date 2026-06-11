@@ -71,7 +71,7 @@ bool initWiFi()
   Serial.println("=== WiFi Init ===");
 
   WiFi.mode(WIFI_STA);
-  WiFi.disconnect(true, true); // clear old state
+  WiFi.disconnect(true, true);
   delay(1000);
 
   WiFi.begin(SSID, PASSWORD);
@@ -96,7 +96,7 @@ bool initWiFi()
   Serial.print("[OK] WiFi connected, IP: ");
   Serial.println(WiFi.localIP());
 
-  // cực quan trọng: đợi network ổn định
+  // Let the network settle before Firebase/NTP use.
   delay(2000);
 
   return true;
@@ -106,7 +106,6 @@ bool initTime()
 {
   Serial.println("=== NTP Init ===");
 
-  // GMT+7
   configTime(
       7 * 3600,
       0,
@@ -174,7 +173,7 @@ void uploadData(float temperature,
   if (!Firebase.ready())
     return;
 
-  // Use YYYY-MM-DD so date folders sort correctly
+  // Keep date folders sortable.
   char dateString[16];
   strftime(
       dateString,
@@ -182,7 +181,7 @@ void uploadData(float temperature,
       "%Y-%m-%d",
       &info);
 
-  // Use HH-MM-SS as child folder name
+  // Time is the child key inside each date folder.
   char timeKey[16];
   strftime(
       timeKey,

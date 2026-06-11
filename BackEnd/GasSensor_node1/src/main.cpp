@@ -17,7 +17,6 @@ bool sim_ready = false;
 
 ST7789 lcd(ST7789_CS_PIN, ST7789_DC_PIN, ST7789_RST_PIN, ST7789_BLK_PIN);
 
-// MAIN SETUP VA LOOP
 void setup()
 {
   Serial.begin(115200);
@@ -76,6 +75,7 @@ void setup()
   initFirebase();
   firebase_ready = true;
 
+  // Enable when the SIM module is wired and ready.
   // sim_ready = initAlertModule();
 
   // if (SEND_TEST_SMS_ON_BOOT)
@@ -112,30 +112,22 @@ void loop()
   alertControl(state);
 
   static int last_state = -1;
-  // Bình thường Vàng (Chữ Đen), Cảnh báo Đỏ (Chữ Trắng)
   uint16_t themeCol = (state >= 3) ? COLOR_RED : COLOR_YELLOW;
   uint16_t textCol = (state >= 3) ? COLOR_WHITE : COLOR_BLACK;
 
   if (state != last_state)
   {
-    lcd.fillRect(0, 0, 240, 40, themeCol); // Chỉ xóa nền khi đổi trạng thái
+    lcd.fillRect(0, 0, 240, 40, themeCol);
     last_state = state;
   }
 
   char buf[32];
-  // Cập nhật số liệu Gas và State
   sprintf(buf, "GAS: %-4d (S%d)", gas, state);
   lcd.drawString(10, 12, buf, textCol, themeCol);
 
-  // --- THAY ĐỔI TẠI ĐÂY: Hiện 2 chữ số thập phân ---
-  // %6.2f giúp cố định độ rộng để số không bị nhảy vị trí khi thay đổi
   sprintf(buf, "%.2fC|%.2f%%", display_temp, display_hum);
-
-  // Có thể cần lùi tọa độ X sang trái một chút (từ 135 hoặc 145 về 125)
-  // để đủ chỗ hiện thêm các chữ số thập phân
   lcd.drawString(125, 12, buf, textCol, themeCol);
 
-  // --- Vẽ dạng sóng 60 giây ---
   updateWaveform(lcd, gas, state, &timeinfo);
 
   if (sim_ready)

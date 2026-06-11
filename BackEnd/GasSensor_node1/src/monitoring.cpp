@@ -56,7 +56,7 @@ namespace
     String response = readSIMFeedback();
     return responseHasSuccess(response);
   }
-} // namespace
+}
 
 bool initAlertModule()
 {
@@ -109,14 +109,12 @@ int sampleGasSensor()
   constexpr int sampleCount = 15;
   int samples[sampleCount];
 
-  // Lấy mẫu
   for (int i = 0; i < sampleCount; i++)
   {
     samples[i] = analogRead(MQ2A_PIN);
     delay(3);
   }
 
-  // Bubble sort nhỏ gọn để lọc nhiễu
   for (int i = 0; i < sampleCount - 1; i++)
   {
     for (int j = i + 1; j < sampleCount; j++)
@@ -130,7 +128,7 @@ int sampleGasSensor()
     }
   }
 
-  // Bỏ 2 giá trị nhỏ nhất + 2 lớn nhất
+  // Drop the two lowest and two highest samples.
   long total = 0;
   for (int i = 2; i < sampleCount - 2; i++)
   {
@@ -144,19 +142,15 @@ int detectGasState(float temperature, float humidity, int gas, float deltaGas, f
 {
   bool harshEnv = (humidity > 90.0f || temperature > 50.0f || temperature < 0.0f);
 
-  // Sensor có thể bị ảnh hưởng môi trường mạnh
   if (harshEnv && gas < GAS_WARNING_THRESHOLD)
     return 4;
 
-  // Nguy hiểm thật sự
   if (gas >= GAS_DANGER_THRESHOLD && (deltaGas > 60.0f || gasRelative > 1.15f))
     return 3;
 
-  // Cảnh báo mạnh
   if (gas >= GAS_WARNING_THRESHOLD && (deltaGas > 35.0f || gasRelative > 1.02f))
     return 2;
 
-  // Cảnh báo nhẹ
   if (gas >= GAS_SAFE_THRESHOLD || deltaGas > 20.0f || gasRelative > 1.03f)
     return 1;
 
@@ -168,20 +162,17 @@ void alertControl(int state)
   static unsigned long lastBlink = 0;
   static bool ledState = false;
 
-  // blink mỗi 500ms
   if (millis() - lastBlink >= 500)
   {
     lastBlink = millis();
     ledState = !ledState;
   }
 
-  // State 2,3,4 thì LED nhấp nháy
   if (state == 2 || state == 3 || state == 4)
     digitalWrite(RED_LED, ledState ? HIGH : LOW);
   else
     digitalWrite(RED_LED, LOW);
 
-  // Chỉ danger mới bật còi
   digitalWrite(BUZZER, (state == 3) ? HIGH : LOW);
 }
 
