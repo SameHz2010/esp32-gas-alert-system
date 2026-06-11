@@ -13,6 +13,9 @@
 
 #define BUZZER 27
 
+#define SDA_PIN 21
+#define SCL_PIN 22
+
 #define SIM_RX_PIN 16
 #define SIM_TX_PIN 17
 
