@@ -12,7 +12,7 @@ import {
 import { database, ensureFirebaseAuth } from "@/lib/firebase";
 import type { RoomId } from "@/lib/constants";
 import { REALTIME_WINDOW_SECONDS } from "@/lib/constants";
-import { getTodayDateKey } from "@/lib/date";
+import { getMsUntilNextMidnight, getTodayDateKey } from "@/lib/date";
 import {
   parseSensorNode,
   readingKey,
@@ -55,18 +55,21 @@ export function useRoomRealtime(roomId: RoomId, enabled: boolean) {
   const addReading = useRoomStore((s) => s.addReading);
   const setReadings = useRoomStore((s) => s.setReadings);
   const setSubscribedDate = useRoomStore((s) => s.setSubscribedDate);
-  const setFirebaseError = useConnectionStore((s) => s.setFirebaseError);
+  const setRoomFirebaseError = useConnectionStore((s) => s.setRoomFirebaseError);
   const subscribedDateRef = useRef("");
 
   useEffect(() => {
     if (!enabled) return;
 
     let cancelled = false;
+    let generation = 0;
+    let midnightTimer: number | null = null;
+    let fallbackInterval: number | null = null;
 
-    const subscribe = async (dateKey: string) => {
+    const subscribe = async (dateKey: string, gen: number) => {
       try {
         await ensureFirebaseAuth();
-        if (cancelled) return;
+        if (cancelled || gen !== generation) return;
 
         const path = `devices/${roomId}/${dateKey}`;
         const roomQuery = query(
@@ -78,9 +81,9 @@ export function useRoomRealtime(roomId: RoomId, enabled: boolean) {
         clearSeen(roomId);
 
         const snapshot = await get(roomQuery);
-        if (cancelled) return;
+        if (cancelled || gen !== generation) return;
 
-        setFirebaseError(null);
+        setRoomFirebaseError(roomId, null);
 
         if (snapshot.exists()) {
           const initial = sortReadingsNewestFirst(
@@ -94,7 +97,11 @@ export function useRoomRealtime(roomId: RoomId, enabled: boolean) {
           setReadings(roomId, []);
         }
 
+        if (cancelled || gen !== generation) return;
+
         const unsubscribe = onChildAdded(roomQuery, (childSnapshot) => {
+          if (gen !== generation) return;
+
           const reading = parseSensorNode(
             childSnapshot.key ?? "",
             dateKey,
@@ -109,6 +116,11 @@ export function useRoomRealtime(roomId: RoomId, enabled: boolean) {
           addReading(roomId, reading);
         });
 
+        if (cancelled || gen !== generation) {
+          unsubscribe();
+          return;
+        }
+
         activeSubscriptions.set(roomId, () => {
           unsubscribe();
           activeSubscriptions.delete(roomId);
@@ -117,8 +129,8 @@ export function useRoomRealtime(roomId: RoomId, enabled: boolean) {
         subscribedDateRef.current = dateKey;
         setSubscribedDate(roomId, dateKey);
       } catch (error) {
-        if (cancelled) return;
-        setFirebaseError(formatFirebaseError(error));
+        if (cancelled || gen !== generation) return;
+        setRoomFirebaseError(roomId, formatFirebaseError(error));
         console.error(`[${roomId}] realtime subscribe failed:`, error);
       }
     };
@@ -132,16 +144,31 @@ export function useRoomRealtime(roomId: RoomId, enabled: boolean) {
         return;
       }
 
+      generation += 1;
+      const gen = generation;
+
       activeSubscriptions.get(roomId)?.();
-      void subscribe(today);
+      setReadings(roomId, []);
+      void subscribe(today, gen);
+    };
+
+    const scheduleMidnightRollover = () => {
+      if (midnightTimer !== null) window.clearTimeout(midnightTimer);
+      midnightTimer = window.setTimeout(() => {
+        ensureSubscription();
+        scheduleMidnightRollover();
+      }, getMsUntilNextMidnight());
     };
 
     ensureSubscription();
-    const interval = window.setInterval(ensureSubscription, 60_000);
+    scheduleMidnightRollover();
+    fallbackInterval = window.setInterval(ensureSubscription, 60_000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      generation += 1;
+      if (midnightTimer !== null) window.clearTimeout(midnightTimer);
+      if (fallbackInterval !== null) window.clearInterval(fallbackInterval);
       activeSubscriptions.get(roomId)?.();
     };
   }, [
@@ -150,12 +177,13 @@ export function useRoomRealtime(roomId: RoomId, enabled: boolean) {
     addReading,
     setReadings,
     setSubscribedDate,
-    setFirebaseError,
+    setRoomFirebaseError,
   ]);
 }
 
-export function useAllRoomsRealtime(activeRoom: RoomId, liveEnabled: boolean) {
-  useRoomRealtime("room_1", liveEnabled && activeRoom === "room_1");
-  useRoomRealtime("room_2", liveEnabled && activeRoom === "room_2");
-  useRoomRealtime("room_3", liveEnabled && activeRoom === "room_3");
+/** Subscribe every room so header tab border/beam colors track live gas state. */
+export function useAllRoomsRealtime(enabled: boolean) {
+  useRoomRealtime("room_1", enabled);
+  useRoomRealtime("room_2", enabled);
+  useRoomRealtime("room_3", enabled);
 }

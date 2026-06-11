@@ -17,6 +17,7 @@ import {
 } from "date-fns";
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { usePortalPosition } from "@/hooks/usePortalPosition";
+import { getTodayDateKey } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
 interface DatePickerProps {
@@ -156,9 +157,9 @@ export function DatePicker({ value, onChange }: DatePickerProps) {
             <button
               type="button"
               onClick={() => {
-                const today = format(new Date(), "yyyy-MM-dd");
+                const today = getTodayDateKey();
                 onChange(today);
-                setViewDate(new Date());
+                setViewDate(parseISO(today));
                 setOpen(false);
               }}
               className="mt-3 w-full rounded-lg border border-amber-500/20 py-2 text-xs font-medium text-amber-200 transition hover:border-amber-400/40 hover:bg-amber-500/10"

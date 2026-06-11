@@ -12,7 +12,7 @@ interface HistoryRecordCardProps {
   selected: boolean;
   deleting: boolean;
   onToggle: (record: SensorReading) => void;
-  onDelete: () => void;
+  onDelete: (record: SensorReading) => void;
 }
 
 function fmtNum(value: number, digits: number) {
@@ -108,7 +108,7 @@ export const HistoryRecordCard = memo(function HistoryRecordCard({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          onDelete();
+          onDelete(record);
         }}
         disabled={deleting}
         aria-label="Delete record"

@@ -1,26 +1,32 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import {
   Bar,
   BarChart,
   Cell,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import type { ChartAnimationConfig } from "@/hooks/useChartEntranceAnimation";
 import { LABEL_META, METRIC_CONFIG } from "@/lib/constants";
 import type { GasStateChartPoint } from "@/lib/types";
 import { getChartCardHeight, type ChartSize } from "@/lib/chartLayout";
-import { useUiStore } from "@/store/uiStore";
+import {
+  BAR_OPACITY_HISTORY,
+  BAR_OPACITY_LATEST,
+  GAS_THRESHOLD_ZONES,
+  getGlowLevel,
+  getLabelMeta,
+} from "@/lib/statusGlow";
+import { ChartGlassTooltip } from "@/components/ui/ChartGlassTooltip";
+import { LiveValue } from "@/components/ui/LiveValue";
+import { StatusPill } from "@/components/ui/StatusPill";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
-
-interface ChartAnimation {
-  isAnimationActive: boolean;
-  animationDuration: number;
-}
 
 interface GasStateChartProps {
   data: GasStateChartPoint[];
@@ -28,8 +34,8 @@ interface GasStateChartProps {
   latestLabel: number;
   className?: string;
   size?: ChartSize;
-  alert?: boolean;
-  animation?: ChartAnimation;
+  compact?: boolean;
+  animation?: ChartAnimationConfig;
 }
 
 const tooltipCursor = {
@@ -40,6 +46,20 @@ const tooltipCursor = {
 
 const LEGEND = Object.entries(LABEL_META);
 const gasUnit = METRIC_CONFIG.gas.unit;
+const axisLineStyle = { stroke: "rgba(255,183,77,0.2)" };
+const xTick = { fill: "#a8a29e", fontSize: 10 };
+const yTick = { fill: "#a8a29e", fontSize: 10 };
+
+const DEFAULT_ANIMATION: ChartAnimationConfig = {
+  isAnimationActive: true,
+  animationDuration: 280,
+};
+
+function formatAxisTime(timeLabel: string) {
+  const parts = timeLabel.split(":");
+  if (parts.length >= 2) return `${parts[parts.length - 2]}:${parts[parts.length - 1]}`;
+  return timeLabel;
+}
 
 function GasStateTooltip({
   active,
@@ -51,14 +71,12 @@ function GasStateTooltip({
   if (!active || !payload?.length) return null;
 
   const point = payload[0].payload;
-  const meta = LABEL_META[point.label] ?? LABEL_META[0];
+  const meta = getLabelMeta(point.label);
 
   return (
-    <div className="rounded-xl border border-amber-500/35 bg-zinc-950 px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
-      <p className="text-sm font-semibold text-stone-100">
-        Time {point.timeLabel}
-      </p>
-      <p className="mt-1.5 text-sm text-amber-100">
+    <ChartGlassTooltip>
+      <p className="text-sm font-semibold text-stone-100">{point.timeLabel}</p>
+      <p className="metric-value mt-1.5 text-sm text-amber-100">
         Gas:{" "}
         <span className="font-bold">
           {point.gas}
@@ -66,9 +84,9 @@ function GasStateTooltip({
         </span>
       </p>
       <p className="mt-1 text-sm font-semibold" style={{ color: meta.color }}>
-        State: {point.label} · {meta.name}
+        {point.label} · {meta.name}
       </p>
-    </div>
+    </ChartGlassTooltip>
   );
 }
 
@@ -78,34 +96,60 @@ export const GasStateChart = memo(function GasStateChart({
   latestLabel,
   className,
   size = "default",
-  alert,
-  animation = { isAnimationActive: true, animationDuration: 280 },
+  compact = false,
+  animation = DEFAULT_ANIMATION,
 }: GasStateChartProps) {
-  const headerCompact = useUiStore((s) => s.headerCompact);
   const isHero = size === "hero";
-  const labelMeta = LABEL_META[latestLabel] ?? LABEL_META[0];
+  const glowLevel = getGlowLevel(latestLabel);
+  const latestSecond = data[data.length - 1]?.second;
+
+  const barCells = useMemo(
+    () =>
+      data.map((entry) => {
+        const isLatest = entry.second === latestSecond;
+        return (
+          <Cell
+            key={`${entry.second}-${entry.timeLabel}`}
+            fill={entry.fill}
+            fillOpacity={isLatest ? BAR_OPACITY_LATEST : BAR_OPACITY_HISTORY}
+            stroke={
+              isLatest ? "rgba(255, 255, 255, 0.18)" : "rgba(0, 0, 0, 0.1)"
+            }
+            strokeWidth={isLatest ? 1.25 : 1}
+          />
+        );
+      }),
+    [data, latestSecond],
+  );
+
+  const xTickFormatter = useMemo(
+    () => (second: number) => {
+      const point = data.find((d) => d.second === second);
+      return point ? formatAxisTime(point.timeLabel) : "";
+    },
+    [data],
+  );
 
   return (
     <Card
       hoverable
-      alert={alert}
+      variant="hero"
+      glowLevel={glowLevel}
       className={cn(
         "flex flex-col",
-        isHero && !headerCompact ? "p-5" : headerCompact ? "p-2.5" : "p-4",
-        getChartCardHeight(headerCompact, size),
-        isHero &&
-          "border-amber-500/35 shadow-[0_0_40px_rgba(255,152,0,0.08)]",
+        isHero && !compact ? "p-5" : compact ? "p-2.5" : "p-4",
+        getChartCardHeight(compact, size),
         className,
       )}
     >
       <div
         className={cn(
           "flex shrink-0 flex-wrap items-center justify-between gap-2",
-          isHero && !headerCompact ? "mb-4" : headerCompact ? "mb-1" : "mb-3",
+          isHero && !compact ? "mb-4" : compact ? "mb-1" : "mb-3",
         )}
       >
         <div className="flex min-w-0 items-center gap-2">
-          {isHero && !headerCompact && (
+          {isHero && !compact && (
             <span className="rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-200">
               Primary
             </span>
@@ -113,9 +157,9 @@ export const GasStateChart = memo(function GasStateChart({
           <h3
             className={cn(
               "font-bold uppercase tracking-[0.12em] text-amber-300",
-              isHero && !headerCompact
+              isHero && !compact
                 ? "text-base sm:text-lg"
-                : headerCompact
+                : compact
                   ? "text-[11px]"
                   : "text-sm",
             )}
@@ -124,69 +168,56 @@ export const GasStateChart = memo(function GasStateChart({
           </h3>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <span
+          <LiveValue
+            value={latestGas}
+            unit={gasUnit}
+            accent="gas"
             className={cn(
-              "font-bold text-white",
-              isHero && !headerCompact
+              isHero && !compact
                 ? "text-xl sm:text-2xl"
-                : headerCompact
+                : compact
                   ? "text-sm"
                   : "text-lg",
             )}
-          >
-            {latestGas !== undefined ? `${latestGas}${gasUnit}` : "—"}
-          </span>
-          <span className="hidden text-stone-600 sm:inline">|</span>
-          <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/30 px-2 py-1">
-            <span
-              className={cn(
-                "rounded-full ring-2 ring-white/10",
-                isHero && !headerCompact
-                  ? "h-3.5 w-3.5"
-                  : headerCompact
-                    ? "h-2.5 w-2.5"
-                    : "h-3 w-3",
-              )}
-              style={{ backgroundColor: labelMeta.color }}
-            />
-            <span
-              className={cn(
-                "font-semibold text-stone-200",
-                isHero && !headerCompact
-                  ? "text-sm"
-                  : headerCompact
-                    ? "text-xs"
-                    : "text-sm",
-              )}
-            >
-              {latestLabel} · {labelMeta.name}
-            </span>
-          </div>
+          />
+          {!compact && <span className="hidden text-stone-600 sm:inline">|</span>}
+          <StatusPill label={latestLabel} compact={compact} />
         </div>
       </div>
 
       <div className="min-h-0 w-full flex-1 [contain:strict]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} barCategoryGap="18%">
+            {GAS_THRESHOLD_ZONES.map((zone) => (
+              <ReferenceArea
+                key={zone.label}
+                y1={zone.y1}
+                y2={zone.y2}
+                fill={zone.fill}
+                fillOpacity={zone.fillOpacity}
+                strokeOpacity={0}
+                ifOverflow="extendDomain"
+              />
+            ))}
             <XAxis
               dataKey="second"
-              tick={{ fill: "#a8a29e", fontSize: 11 }}
-              axisLine={{ stroke: "rgba(255,183,77,0.2)" }}
+              tick={xTick}
+              axisLine={axisLineStyle}
               tickLine={false}
+              interval="preserveStartEnd"
+              tickFormatter={xTickFormatter}
+              minTickGap={28}
             />
             <YAxis
               domain={[0, 3000]}
               ticks={[0, 750, 1500, 2250, 3000]}
-              tick={{ fill: "#a8a29e", fontSize: 11 }}
-              axisLine={{ stroke: "rgba(255,183,77,0.2)" }}
+              tick={yTick}
+              axisLine={axisLineStyle}
               tickLine={false}
               width={48}
               tickFormatter={(v: number) => `${v}`}
             />
-            <Tooltip
-              cursor={tooltipCursor}
-              content={<GasStateTooltip />}
-            />
+            <Tooltip cursor={tooltipCursor} content={<GasStateTooltip />} />
             <Bar
               dataKey="gas"
               radius={[4, 4, 0, 0]}
@@ -195,23 +226,25 @@ export const GasStateChart = memo(function GasStateChart({
               animationEasing="ease-out"
               activeBar={false}
             >
-              {data.map((entry) => (
-                <Cell
-                  key={`${entry.second}-${entry.timeLabel}`}
-                  fill={entry.fill}
-                  stroke="rgba(0,0,0,0.12)"
-                  strokeWidth={1}
-                />
-              ))}
+              {barCells}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {!headerCompact && (
+      {compact ? (
+        <div className="mt-1.5 flex shrink-0 items-center justify-center gap-1.5">
+          {LEGEND.map(([level, info]) => (
+            <span
+              key={level}
+              title={`${level}: ${info.name}`}
+              className="h-2 w-2 rounded-full ring-1 ring-white/10"
+              style={{ backgroundColor: info.color }}
+            />
+          ))}
+        </div>
+      ) : (
         <div className="mt-3 flex h-10 shrink-0 items-center gap-2 overflow-x-auto">
-          <span className="shrink-0 text-[10px] uppercase tracking-wider text-stone-500">
-          </span>
           {LEGEND.map(([level, info]) => (
             <div
               key={level}

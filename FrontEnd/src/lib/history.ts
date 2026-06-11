@@ -1,7 +1,7 @@
 import type { HistoryFilters, SensorReading } from "./types";
+import { isTodayDateKey } from "./date";
 import { getPresetSeconds } from "./timePresets";
 import { hhmmToMinutes, parseNumber, timeKeyToMinutes } from "./utils";
-import { sortReadingsNewestFirst } from "./sensor";
 
 function matchesSearch(reading: SensorReading, search: string): boolean {
   const query = search.trim().toLowerCase();
@@ -34,8 +34,11 @@ export function filterHistory(
   const timeFrom = hhmmToMinutes(filters.timeFrom);
   const timeTo = hhmmToMinutes(filters.timeTo);
   const presetSeconds = getPresetSeconds(filters.timePreset);
+  const presetAppliesToToday = isTodayDateKey(filters.date);
   const presetCutoff =
-    presetSeconds !== null ? Date.now() - presetSeconds * 1000 : null;
+    presetSeconds !== null && presetAppliesToToday
+      ? Date.now() - presetSeconds * 1000
+      : null;
 
   const labelFilter =
     filters.label === "" ? null : Number.parseInt(filters.label, 10);
@@ -50,34 +53,33 @@ export function filterHistory(
   const humidityMin = parseNumber(filters.humidityMin);
   const humidityMax = parseNumber(filters.humidityMax);
 
-  return sortReadingsNewestFirst(
-    readings.filter((reading) => {
-      if (reading.dateKey !== filters.date) return false;
+  // Input is pre-sorted newest-first from useHistoryData; filter preserves order.
+  return readings.filter((reading) => {
+    if (reading.dateKey !== filters.date) return false;
 
-      if (presetCutoff !== null && readingToMs(reading) < presetCutoff) {
-        return false;
-      }
+    if (presetCutoff !== null && readingToMs(reading) < presetCutoff) {
+      return false;
+    }
 
-      const minutes = timeKeyToMinutes(reading.timeKey);
-      if (timeFrom !== null && minutes < timeFrom) return false;
-      if (timeTo !== null && minutes > timeTo) return false;
-      if (labelFilter !== null && reading.label !== labelFilter) return false;
-      if (gasMin !== null && reading.gas < gasMin) return false;
-      if (gasMax !== null && reading.gas > gasMax) return false;
-      if (deltaGasMin !== null && reading.delta_gas < deltaGasMin) return false;
-      if (deltaGasMax !== null && reading.delta_gas > deltaGasMax) return false;
-      if (gasRelativeMin !== null && reading.gas_relative < gasRelativeMin)
-        return false;
-      if (gasRelativeMax !== null && reading.gas_relative > gasRelativeMax)
-        return false;
-      if (tempMin !== null && reading.temperature < tempMin) return false;
-      if (tempMax !== null && reading.temperature > tempMax) return false;
-      if (humidityMin !== null && reading.humidity < humidityMin) return false;
-      if (humidityMax !== null && reading.humidity > humidityMax) return false;
+    const minutes = timeKeyToMinutes(reading.timeKey);
+    if (timeFrom !== null && minutes < timeFrom) return false;
+    if (timeTo !== null && minutes > timeTo) return false;
+    if (labelFilter !== null && reading.label !== labelFilter) return false;
+    if (gasMin !== null && reading.gas < gasMin) return false;
+    if (gasMax !== null && reading.gas > gasMax) return false;
+    if (deltaGasMin !== null && reading.delta_gas < deltaGasMin) return false;
+    if (deltaGasMax !== null && reading.delta_gas > deltaGasMax) return false;
+    if (gasRelativeMin !== null && reading.gas_relative < gasRelativeMin)
+      return false;
+    if (gasRelativeMax !== null && reading.gas_relative > gasRelativeMax)
+      return false;
+    if (tempMin !== null && reading.temperature < tempMin) return false;
+    if (tempMax !== null && reading.temperature > tempMax) return false;
+    if (humidityMin !== null && reading.humidity < humidityMin) return false;
+    if (humidityMax !== null && reading.humidity > humidityMax) return false;
 
-      return matchesSearch(reading, filters.search);
-    }),
-  );
+    return matchesSearch(reading, filters.search);
+  });
 }
 
 export function paginate<T>(items: T[], page: number, pageSize: number) {

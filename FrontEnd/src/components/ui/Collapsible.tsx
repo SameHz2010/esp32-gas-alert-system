@@ -33,10 +33,7 @@ export const Collapsible = memo(function Collapsible({
           style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
         />
       </button>
-      <AnimatedCollapse
-        open={open}
-        contentClassName="filter-panel-scroll pt-4"
-      >
+      <AnimatedCollapse open={open} contentClassName="pt-4">
         {children}
       </AnimatedCollapse>
     </div>

@@ -1,25 +1,24 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useId, useMemo } from "react";
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import type { ChartAnimationConfig } from "@/hooks/useChartEntranceAnimation";
 import type { ChartPoint } from "@/lib/types";
 import { getChartCardHeight, type ChartSize } from "@/lib/chartLayout";
-import { useUiStore } from "@/store/uiStore";
+import { ChartGlassTooltip } from "@/components/ui/ChartGlassTooltip";
+import { LiveValue } from "@/components/ui/LiveValue";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
-
-interface ChartAnimation {
-  isAnimationActive: boolean;
-  animationDuration: number;
-}
 
 interface MetricChartProps {
   title: string;
@@ -28,7 +27,10 @@ interface MetricChartProps {
   data: ChartPoint[];
   className?: string;
   size?: ChartSize;
-  animation?: ChartAnimation;
+  compact?: boolean;
+  animation?: ChartAnimationConfig;
+  valueDecimals?: number;
+  valueAccent?: "humidity" | "temperature";
 }
 
 const tooltipCursor = {
@@ -37,24 +39,44 @@ const tooltipCursor = {
   strokeDasharray: "4 4",
 };
 
-const tooltipStyle = {
-  background: "#09090b",
-  border: "1px solid rgba(251,191,36,0.35)",
-  borderRadius: 12,
-  color: "#fafaf9",
-  boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+const axisLineStyle = { stroke: "rgba(255,183,77,0.2)" };
+
+const DEFAULT_ANIMATION: ChartAnimationConfig = {
+  isAnimationActive: true,
+  animationDuration: 280,
 };
 
-const tooltipLabelStyle = {
-  color: "#fafaf9",
-  fontWeight: 600,
-  marginBottom: 6,
-};
+function formatAxisTime(timeLabel: string) {
+  const parts = timeLabel.split(":");
+  if (parts.length >= 2) return `${parts[parts.length - 2]}:${parts[parts.length - 1]}`;
+  return timeLabel;
+}
 
-const tooltipItemStyle = {
-  color: "#fde68a",
-  fontWeight: 600,
-};
+function MetricTooltip({
+  active,
+  payload,
+  unit,
+  title,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: ChartPoint }>;
+  unit: string;
+  title: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0].payload;
+  return (
+    <ChartGlassTooltip>
+      <p className="text-sm font-semibold text-stone-100">
+        {point.timeLabel}
+      </p>
+      <p className="metric-value mt-1.5 text-sm font-bold text-amber-100">
+        {title}: {point.value}
+        {unit}
+      </p>
+    </ChartGlassTooltip>
+  );
+}
 
 export const MetricChart = memo(function MetricChart({
   title,
@@ -63,72 +85,103 @@ export const MetricChart = memo(function MetricChart({
   data,
   className,
   size = "default",
-  animation = { isAnimationActive: true, animationDuration: 280 },
+  compact = false,
+  animation = DEFAULT_ANIMATION,
+  valueDecimals = 1,
+  valueAccent = "humidity",
 }: MetricChartProps) {
-  const headerCompact = useUiStore((s) => s.headerCompact);
   const isCompact = size === "compact";
   const latest = data[data.length - 1]?.value;
+  const gradientId = useId().replace(/:/g, "");
+  const lastPoint = data[data.length - 1];
+
+  const xTick = useMemo(
+    () => ({ fill: "#a8a29e", fontSize: isCompact ? 9 : 10 }),
+    [isCompact],
+  );
+  const yTick = useMemo(
+    () => ({ fill: "#a8a29e", fontSize: isCompact ? 9 : 10 }),
+    [isCompact],
+  );
+  const xTickFormatter = useMemo(
+    () => (second: number) => {
+      const point = data.find((d) => d.second === second);
+      return point ? formatAxisTime(point.timeLabel) : "";
+    },
+    [data],
+  );
 
   return (
     <Card
       hoverable
+      variant="metric"
       className={cn(
         "flex flex-col",
-        isCompact ? "p-2.5" : headerCompact ? "p-2.5" : "p-4",
-        getChartCardHeight(headerCompact, size),
-        isCompact && "border-white/10 bg-zinc-950/60",
+        isCompact ? "p-2.5" : compact ? "p-2.5" : "p-4",
+        getChartCardHeight(compact, size),
         className,
       )}
     >
       <div
         className={cn(
           "flex shrink-0 items-center justify-between gap-2",
-          isCompact || headerCompact ? "mb-1" : "mb-3",
+          isCompact || compact ? "mb-1" : "mb-3",
         )}
       >
         <h3
           className={cn(
             "font-semibold uppercase tracking-[0.15em] text-amber-300/90",
-            isCompact ? "text-[10px]" : headerCompact ? "text-[11px]" : "text-sm",
+            isCompact ? "text-[10px]" : compact ? "text-[11px]" : "text-sm",
           )}
         >
           {title}
         </h3>
-        <span
+        <LiveValue
+          value={latest}
+          unit={unit}
+          decimals={valueDecimals}
+          accent={valueAccent}
           className={cn(
-            "font-bold text-white",
-            isCompact ? "text-xs" : headerCompact ? "text-sm" : "text-lg",
+            isCompact ? "text-xs" : compact ? "text-sm" : "text-lg",
           )}
-        >
-          {latest !== undefined ? `${latest}${unit}` : "—"}
-        </span>
+        />
       </div>
       <div className="min-h-0 w-full flex-1 [contain:strict]">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
+          <ComposedChart data={data}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.32} />
+                <stop offset="95%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
             <CartesianGrid stroke="rgba(255,183,77,0.06)" vertical={false} />
             <XAxis
               dataKey="second"
-              tick={{ fill: "#a8a29e", fontSize: isCompact ? 9 : 11 }}
-              axisLine={{ stroke: "rgba(255,183,77,0.2)" }}
+              tick={xTick}
+              axisLine={axisLineStyle}
               tickLine={false}
+              interval="preserveStartEnd"
+              tickFormatter={xTickFormatter}
+              minTickGap={isCompact ? 24 : 32}
             />
             <YAxis
-              tick={{ fill: "#a8a29e", fontSize: isCompact ? 9 : 11 }}
-              axisLine={{ stroke: "rgba(255,183,77,0.2)" }}
+              tick={yTick}
+              axisLine={axisLineStyle}
               tickLine={false}
               width={isCompact ? 36 : 42}
+              tickFormatter={(v: number) => `${v}`}
             />
             <Tooltip
               cursor={tooltipCursor}
-              contentStyle={tooltipStyle}
-              labelStyle={tooltipLabelStyle}
-              itemStyle={tooltipItemStyle}
-              labelFormatter={(_, payload) => {
-                const point = payload?.[0]?.payload as ChartPoint | undefined;
-                return point ? `Time ${point.timeLabel}` : "";
-              }}
-              formatter={(value: number) => [`${value}${unit}`, title]}
+              content={<MetricTooltip unit={unit} title={title} />}
+            />
+            <Area
+              type="monotone"
+              dataKey="value"
+              fill={`url(#${gradientId})`}
+              stroke="none"
+              isAnimationActive={false}
             />
             <Line
               type="monotone"
@@ -141,7 +194,29 @@ export const MetricChart = memo(function MetricChart({
               animationEasing="ease-out"
               activeDot={{ r: 4, fill: color }}
             />
-          </LineChart>
+            {lastPoint && (
+              <>
+                <ReferenceDot
+                  x={lastPoint.second}
+                  y={lastPoint.value}
+                  r={6}
+                  fill={color}
+                  fillOpacity={0.12}
+                  stroke="none"
+                  isFront
+                />
+                <ReferenceDot
+                  x={lastPoint.second}
+                  y={lastPoint.value}
+                  r={3.5}
+                  fill={color}
+                  stroke="#09090b"
+                  strokeWidth={1.5}
+                  isFront
+                />
+              </>
+            )}
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     </Card>

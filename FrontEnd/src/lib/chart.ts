@@ -1,4 +1,9 @@
 import { REALTIME_WINDOW_SECONDS, LABEL_META } from "./constants";
+
+/** Samples shown on live charts / badge (caps stored buffer above the 60s window). */
+export function getLiveWindowDisplayCount(storedCount: number): number {
+  return Math.min(storedCount, REALTIME_WINDOW_SECONDS);
+}
 import type {
   ChartPoint,
   GasStateChartPoint,

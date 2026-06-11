@@ -30,11 +30,9 @@ body {
   0%,
   100% {
     border-color: rgba(239, 68, 68, 0.35);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2);
   }
   50% {
     border-color: rgba(248, 113, 113, 0.95);
-    box-shadow: 0 0 28px 4px rgba(239, 68, 68, 0.35);
   }
 }
 
@@ -69,8 +67,378 @@ body {
   }
 }
 
-.alert-border-pulse {
+.alert-border-pulse,
+.glow-danger {
+  box-shadow: 0 0 20px 2px rgba(239, 68, 68, 0.25);
   animation: alert-border-pulse 1.2s ease-in-out infinite;
+}
+
+.glow-warning {
+  border-color: rgba(251, 191, 36, 0.38) !important;
+  box-shadow: 0 0 18px 1px rgba(251, 191, 36, 0.14);
+}
+
+.metric-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes room-enter {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-room-enter {
+  animation: room-enter 0.24s ease-out both;
+}
+
+.animate-tooltip-in {
+  animation: tooltip-in 0.14s ease-out both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toast-card {
+  animation: toast-in 0.2s ease-out both;
+}
+
+.chart-glass-tooltip {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  background: rgba(9, 9, 11, 0.78);
+  padding: 0.625rem 0.75rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+}
+
+/* Live window badge tooltip */
+.live-window-tooltip-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    visibility 0.12s ease;
+}
+
+.live-window-tooltip-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    visibility 0.16s ease;
+}
+
+.live-window-tooltip-panel {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  background: linear-gradient(
+    165deg,
+    rgba(6, 24, 20, 0.94) 0%,
+    rgba(9, 9, 11, 0.92) 55%,
+    rgba(6, 6, 8, 0.96) 100%
+  );
+  padding: 0.75rem 0.875rem;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 0 20px rgba(52, 211, 153, 0.1);
+  backdrop-filter: blur(14px);
+}
+
+.live-window-tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.125rem;
+  height: 1.5rem;
+  width: 1.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  background: rgba(52, 211, 153, 0.1);
+  color: rgba(110, 231, 183, 0.95);
+}
+
+.live-window-tooltip-arrow {
+  position: absolute;
+  top: -5px;
+  right: 1.25rem;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  border-top: 1px solid rgba(52, 211, 153, 0.22);
+  border-left: 1px solid rgba(52, 211, 153, 0.22);
+  background: rgba(9, 9, 11, 0.94);
+}
+
+/* Room tab hover tooltip — glass + live state accent */
+.room-tab-tooltip {
+  left: 50%;
+}
+
+.room-tab-tooltip-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(-6px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    visibility 0.12s ease;
+}
+
+.room-tab-tooltip-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    visibility 0.16s ease;
+}
+
+.room-tab-tooltip-panel {
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--room-state-color) 28%, rgba(255, 255, 255, 0.08));
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--room-state-color) 10%, rgba(12, 12, 14, 0.94)) 0%,
+    rgba(9, 9, 11, 0.92) 55%,
+    rgba(6, 6, 8, 0.96) 100%
+  );
+  padding: 0.75rem 0.875rem;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 0 20px color-mix(in srgb, var(--room-state-color) 12%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.room-tab-tooltip-badge {
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--room-state-color) 35%, transparent);
+  background: color-mix(in srgb, var(--room-state-color) 12%, transparent);
+  color: color-mix(in srgb, var(--room-state-color) 85%, #fafaf9);
+  padding: 0.125rem 0.375rem;
+}
+
+.room-tab-tooltip-below .room-tab-tooltip-arrow {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg);
+  border-top: 1px solid color-mix(in srgb, var(--room-state-color) 22%, rgba(255, 255, 255, 0.08));
+  border-left: 1px solid color-mix(in srgb, var(--room-state-color) 22%, rgba(255, 255, 255, 0.08));
+  background: rgba(9, 9, 11, 0.94);
+}
+
+/* Smooth realtime color transitions on room tab border beam */
+@property --room-state-color {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #7dd87d;
+}
+
+/* Room tabs — beam runs in the border ring only (shell padding), not over the button face */
+.room-tab-shell {
+  position: relative;
+  isolation: isolate;
+  padding: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--room-state-color) 14%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--room-state-color) 7%, transparent);
+  transition: --room-state-color 0.55s ease;
+}
+
+.room-tab-shell.room-tab-shell-active {
+  transition:
+    --room-state-color 0.55s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.room-tab-shell:not(.room-tab-shell-active) {
+  transition:
+    --room-state-color 0.55s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.room-tab-shell:not(.room-tab-shell-active):hover {
+  background: color-mix(in srgb, var(--room-state-color) 20%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--room-state-color) 10%, transparent);
+}
+
+.room-tab-border-beam {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 0;
+  width: 280%;
+  height: 280%;
+  pointer-events: none;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg 288deg,
+    color-mix(in srgb, var(--room-state-color) 50%, transparent) 304deg,
+    color-mix(in srgb, var(--room-state-color) 92%, #ffffff) 316deg,
+    color-mix(in srgb, var(--room-state-color) 92%, #ffffff) 324deg,
+    color-mix(in srgb, var(--room-state-color) 50%, transparent) 336deg,
+    transparent 350deg,
+    transparent 360deg
+  );
+  animation: room-tab-beam-spin 2.6s linear infinite;
+  will-change: transform;
+}
+
+.room-tab-inner {
+  display: block;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  /* Opaque face — never transition background (prevents beam flash on tab switch) */
+  background-color: #09090b;
+  color: #a8a29e;
+  transition: color 0.2s ease;
+}
+
+.room-tab-inner:hover:not(.room-tab-inner-active) {
+  background-color: #141416;
+  color: #e7e5e4;
+}
+
+/* Tint layer sits on opaque base; toggled instantly with active class */
+.room-tab-inner-active {
+  color: #f5f5f4;
+  font-weight: 600;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.room-tab-inner-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--room-state-color) 22%, #141416) 0%,
+    color-mix(in srgb, var(--room-state-color) 10%, #09090b) 45%,
+    #09090b 100%
+  );
+  transition: background 0.55s ease;
+}
+
+.room-tab-inner-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-state-color) 32%, transparent);
+}
+
+.room-tab-inner-content {
+  position: relative;
+  z-index: 1;
+}
+
+.room-tab-shell-active .room-tab-status-dot {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--room-state-color) 55%, #09090b),
+    0 0 10px color-mix(in srgb, var(--room-state-color) 70%, transparent);
+}
+
+.room-tab-shell:not(.room-tab-shell-active) .room-tab-status-dot {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 6px color-mix(in srgb, var(--room-state-color) 45%, transparent);
+}
+
+@keyframes room-tab-beam-spin {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+.room-tab-shell-active {
+  background: color-mix(in srgb, var(--room-state-color) 38%, transparent);
+  box-shadow:
+    0 0 16px color-mix(in srgb, var(--room-state-color) 22%, transparent),
+    0 0 1px color-mix(in srgb, var(--room-state-color) 50%, transparent);
+}
+
+.room-tab-shell-active .room-tab-border-beam {
+  animation-duration: 2.2s;
+}
+
+.room-tab-warning .room-tab-border-beam {
+  animation-duration: 2.3s;
+}
+
+.room-tab-danger .room-tab-border-beam {
+  animation-duration: 1.75s;
+}
+
+.room-tab-danger.room-tab-shell {
+  animation: room-tab-danger-shell 2.8s ease-in-out infinite;
+}
+
+@keyframes room-tab-danger-shell {
+  0%,
+  100% {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--room-state-color) 16%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 16px color-mix(in srgb, var(--room-state-color) 30%, transparent);
+  }
+}
+
+.mission-control-bar {
+  border-color: rgba(251, 191, 36, 0.22);
+  background: linear-gradient(
+    90deg,
+    rgba(9, 9, 11, 0.95) 0%,
+    rgba(24, 24, 27, 0.88) 50%,
+    rgba(9, 9, 11, 0.95) 100%
+  );
 }
 
 @keyframes ping-slow {
@@ -263,27 +631,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   overscroll-behavior: contain;
 }
 
-.filter-panel-scroll {
-  max-height: min(72vh, 820px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  padding-right: 2px;
-}
-
-.filter-panel-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.filter-panel-scroll::-webkit-scrollbar-thumb {
-  background: rgba(251, 191, 36, 0.35);
-  border-radius: 999px;
-}
-
-.filter-panel-scroll::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.25);
-}
-
 .dialog-preview-scroll::-webkit-scrollbar {
   width: 6px;
 }
@@ -299,8 +646,20 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   .animate-scale-in,
   .animate-ping-slow,
   .alert-border-pulse,
-  .loading-shimmer {
+  .glow-danger,
+  .loading-shimmer,
+  .animate-room-enter,
+  .animate-tooltip-in,
+  .room-tab-border-beam,
+  .room-tab-danger.room-tab-shell,
+  .room-tab-tooltip-hidden,
+  .room-tab-tooltip-visible,
+  .live-window-tooltip-hidden,
+  .live-window-tooltip-visible,
+  .animate-tooltip-in,
+  .toast-card {
     animation: none !important;
+    transition: none !important;
   }
 
 }

@@ -3,6 +3,7 @@
 import { memo, useCallback, useState } from "react";
 import { AnimatedCollapse } from "@/components/ui/AnimatedCollapse";
 import {
+  CalendarDays,
   ChevronDown,
   Clock,
   Droplets,
@@ -13,7 +14,8 @@ import {
 } from "lucide-react";
 import type { HistoryFilters } from "@/lib/types";
 import { TIME_PRESETS, type TimePresetId } from "@/lib/timePresets";
-import { getTodayDateKey } from "@/lib/date";
+import { getTodayDateKey, isTodayDateKey } from "@/lib/date";
+import { format, parseISO } from "date-fns";
 import { DatePicker } from "@/components/ui/DatePicker";
 import { Input } from "@/components/ui/Input";
 import { LabelSelect } from "@/components/ui/LabelSelect";
@@ -27,13 +29,31 @@ interface HistoryFiltersPanelProps {
     key: K,
     value: HistoryFilters[K],
   ) => void;
+  onBatchChange?: (patch: Partial<HistoryFilters>) => void;
 }
 
 export const HistoryFiltersPanel = memo(function HistoryFiltersPanel({
   filters,
   onChange,
+  onBatchChange,
 }: HistoryFiltersPanelProps) {
+  const isToday = isTodayDateKey(filters.date);
+  const selectedDateLabel = filters.date
+    ? format(parseISO(filters.date), "dd MMM yyyy")
+    : "selected date";
+
   const applyPreset = (preset: TimePresetId) => {
+    if (!isToday) return;
+    const patch = {
+      timePreset: preset,
+      date: getTodayDateKey(),
+      timeFrom: "",
+      timeTo: "",
+    } as const;
+    if (onBatchChange) {
+      onBatchChange(patch);
+      return;
+    }
     onChange("timePreset", preset);
     onChange("date", getTodayDateKey());
     onChange("timeFrom", "");
@@ -50,6 +70,23 @@ export const HistoryFiltersPanel = memo(function HistoryFiltersPanel({
     if (value) onChange("timePreset", "");
   };
 
+  const goToToday = useCallback(() => {
+    const patch = {
+      date: getTodayDateKey(),
+      timePreset: "all" as const,
+      timeFrom: "",
+      timeTo: "",
+    };
+    if (onBatchChange) {
+      onBatchChange(patch);
+      return;
+    }
+    onChange("date", patch.date);
+    onChange("timePreset", patch.timePreset);
+    onChange("timeFrom", patch.timeFrom);
+    onChange("timeTo", patch.timeTo);
+  }, [onBatchChange, onChange]);
+
   return (
     <div className="space-y-4">
       <FilterSection
@@ -57,17 +94,58 @@ export const HistoryFiltersPanel = memo(function HistoryFiltersPanel({
         title="Time & Quick Range"
         defaultOpen
       >
-        <div className="mb-3 flex flex-wrap gap-2">
+        {!isToday && (
+          <div className="mb-3 flex flex-col gap-3 rounded-lg border border-stone-600/40 bg-stone-900/60 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs leading-relaxed text-stone-400">
+              Viewing{" "}
+              <span className="font-medium text-stone-300">{selectedDateLabel}</span>
+              {" — "}
+              quick range presets are off. Use{" "}
+              <span className="text-amber-200/90">Time From / Time To</span>, or
+              jump back to today.
+            </p>
+            <button
+              type="button"
+              onClick={goToToday}
+              className={cn(
+                "inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-amber-400/35",
+                "bg-gradient-to-r from-amber-500/20 to-orange-600/15 px-4 py-2 text-xs font-semibold text-amber-100",
+                "transition-[border-color,background-color,box-shadow,transform] duration-200",
+                "hover:-translate-y-px hover:border-amber-300/50 hover:shadow-[0_0_16px_rgba(255,152,0,0.15)]",
+              )}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              Back to Today
+            </button>
+          </div>
+        )}
+        <div
+          className={cn(
+            "mb-3 flex flex-wrap gap-2",
+            !isToday && "pointer-events-none select-none opacity-35 grayscale",
+          )}
+          aria-disabled={!isToday}
+        >
           {TIME_PRESETS.map((preset) => (
             <button
               key={preset.id}
               type="button"
+              disabled={!isToday}
+              tabIndex={isToday ? 0 : -1}
               onClick={() => applyPreset(preset.id)}
+              title={
+                isToday
+                  ? undefined
+                  : "Quick range presets are only available for today's date"
+              }
               className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200",
-                filters.timePreset === preset.id
+                "rounded-full px-3 py-1.5 text-xs font-medium transition-[background-color,border-color,color,box-shadow] duration-200",
+                "disabled:cursor-not-allowed disabled:border-stone-700/50 disabled:bg-stone-900/50 disabled:text-stone-600 disabled:shadow-none",
+                filters.timePreset === preset.id && isToday
                   ? "bg-gradient-to-r from-amber-500 to-orange-600 text-black shadow-[0_0_16px_rgba(255,152,0,0.2)]"
-                  : "border border-amber-500/20 bg-black/40 text-stone-300 hover:border-amber-400/40 hover:text-amber-100",
+                  : "border border-amber-500/20 bg-black/40 text-stone-300",
+                isToday &&
+                  "hover:border-amber-400/40 hover:text-amber-100",
               )}
             >
               {preset.label}
@@ -76,13 +154,33 @@ export const HistoryFiltersPanel = memo(function HistoryFiltersPanel({
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Date">
-            <DatePicker
-              value={filters.date}
-              onChange={(value) => {
-                onChange("date", value);
-                if (value !== getTodayDateKey()) onChange("timePreset", "");
-              }}
-            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+              <div className="min-w-0 flex-1">
+                <DatePicker
+                  value={filters.date}
+                  onChange={(value) => {
+                    onChange("date", value);
+                    if (!isTodayDateKey(value)) onChange("timePreset", "");
+                  }}
+                />
+              </div>
+              {!isToday && (
+                <button
+                  type="button"
+                  onClick={goToToday}
+                  title="Return to today's date"
+                  className={cn(
+                    "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-amber-500/25",
+                    "bg-black/40 px-3 py-2.5 text-xs font-medium text-amber-200",
+                    "transition-[border-color,background-color,color] duration-200",
+                    "hover:border-amber-400/40 hover:bg-amber-500/10 hover:text-amber-100",
+                  )}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  Today
+                </button>
+              )}
+            </div>
           </Field>
           <Field label="Time From">
             <TimePicker
