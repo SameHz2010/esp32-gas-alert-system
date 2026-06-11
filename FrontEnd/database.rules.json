@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "devices": {
+      ".read": true,
+      ".write": true
+    },
+    "latest_room_1": {
+      ".read": true,
+      ".write": true
+    },
+    "latest_room_2": {
+      ".read": true,
+      ".write": true
+    },
+    "latest_room_3": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

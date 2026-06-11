@@ -1,0 +1,12 @@
+{
+  "name": "gas-sensor-mock-sender",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mock Firebase RTDB sender for realtime dashboard testing",
+  "type": "module",
+  "scripts": {
+    "start": "node mock-simulator.js",
+    "mock": "node mock-simulator.js",
+    "setup": "node -e \"const fs=require('fs'); if(!fs.existsSync('config.json')){fs.copyFileSync('config.example.json','config.json'); console.log('Created config.json');} else {console.log('config.json already exists');}\""
+  }
+}
