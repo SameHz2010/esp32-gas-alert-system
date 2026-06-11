@@ -5,145 +5,81 @@
 #include "monitoring.h"
 #include "ST7789.h"
 #include "waveform.h"
+#include "remote_alerts.h"
 
 float gas_prev = 0, gas_avg = 0;
 unsigned long last_call_time = 0;
 unsigned long last_loop_time = 0;
-unsigned long last_remote_fetch_time = 0;
 bool wifi_ready = false;
 bool time_ready = false;
 bool firebase_ready = false;
 bool sim_ready = false;
 
 ST7789 lcd(ST7789_CS_PIN, ST7789_DC_PIN, ST7789_RST_PIN, ST7789_BLK_PIN);
-RemoteSnapshot remoteNode1;
-RemoteSnapshot remoteNode2;
-
-struct RoomSmsAlert
-{
-  const char *deviceId;
-  bool alertFlag;
-  unsigned long lastSmsTime;
-};
-
-RoomSmsAlert room1Sms = {DEVICE_ID, false, 0};
-RoomSmsAlert room2Sms = {REMOTE_NODE_1_ID, false, 0};
-RoomSmsAlert room3Sms = {REMOTE_NODE_2_ID, false, 0};
-
-void ensureServices()
-{
-  if (!wifi_ready)
-    wifi_ready = initWiFi();
-
-  if (wifi_ready && !time_ready)
-    time_ready = initTime();
-
-  if (wifi_ready && !firebase_ready)
-  {
-    initFirebase();
-    firebase_ready = true;
-  }
-}
-
-void printRemoteSnapshot(const RemoteSnapshot &snapshot)
-{
-  if (!snapshot.valid)
-    return;
-
-  Serial.printf(
-      "Remote [%s] Temp=%.2fC Hum=%.2f%% Gas=%d Delta=%.2f Relative=%.2f State=%d\n",
-      snapshot.deviceId.c_str(),
-      snapshot.temperature,
-      snapshot.humidity,
-      snapshot.gas,
-      snapshot.deltaGas,
-      snapshot.gasRelative,
-      snapshot.state);
-}
-
-void fetchRemoteNodes()
-{
-  if (!firebase_ready)
-    return;
-
-  if (millis() - last_remote_fetch_time < REMOTE_FETCH_INTERVAL_MS)
-    return;
-
-  last_remote_fetch_time = millis();
-
-  bool node1Ok = readRemoteSnapshot(REMOTE_NODE_1_ID, remoteNode1);
-  bool node2Ok = readRemoteSnapshot(REMOTE_NODE_2_ID, remoteNode2);
-
-  if (node1Ok || node2Ok)
-  {
-    Serial.println("REMOTE NODE DATA");
-    printRemoteSnapshot(remoteNode1);
-    printRemoteSnapshot(remoteNode2);
-    Serial.println("----------------------------------------------");
-  }
-}
-
-bool smsCooldownReady(const RoomSmsAlert &room)
-{
-  return room.lastSmsTime == 0 || millis() - room.lastSmsTime >= SMS_COOLDOWN;
-}
-
-void processRoomSmsAlert(RoomSmsAlert &room, bool dataValid, int gas, int state)
-{
-  if (!dataValid || state != 3)
-  {
-    room.alertFlag = false;
-    return;
-  }
-
-  if (!room.alertFlag && smsCooldownReady(room))
-    room.alertFlag = true;
-
-  if (!room.alertFlag)
-    return;
-
-  if (sendAlertSms(room.deviceId, gas, room.lastSmsTime, state))
-    room.alertFlag = false;
-}
-
-void processAllRoomSmsAlerts(int localGas, int localState)
-{
-  processRoomSmsAlert(room1Sms, true, localGas, localState);
-  processRoomSmsAlert(room2Sms, remoteNode1.valid, remoteNode1.gas, remoteNode1.state);
-  processRoomSmsAlert(room3Sms, remoteNode2.valid, remoteNode2.gas, remoteNode2.state);
-}
 
 // MAIN SETUP VA LOOP
 void setup()
 {
   Serial.begin(115200);
   pinMode(RED_LED, OUTPUT);
+  pinMode(YELLOW_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
   pinMode(BUZZER, OUTPUT);
 
-  Wire.begin(21, 22);
+  Wire.begin(SDA_PIN, SCL_PIN);
 
   if (!dht20_init())
   {
     Serial.println("DHT20 Fail");
   }
 
-  wifi_ready = initWiFi();
+  digitalWrite(RED_LED, HIGH);
+  delay(500);
 
-  if (wifi_ready)
+  while (!wifi_ready)
   {
+    Serial.println("Connecting to WiFi...");
+
+    wifi_ready = initWiFi();
+
+    if (!wifi_ready)
+    {
+      Serial.println("WiFi connection failed.");
+      Serial.println("SSID not found or password may be incorrect.");
+      Serial.println("Retrying in 3 seconds...");
+      delay(3000);
+    }
+  }
+
+  digitalWrite(YELLOW_LED, HIGH);
+  delay(500);
+
+  Serial.println("WiFi connected");
+
+  while (!time_ready)
+  {
+    Serial.println("Syncing time...");
+
     time_ready = initTime();
-    initFirebase();
-    firebase_ready = true;
-  }
-  else
-  {
-    Serial.println("System will continue and retry connectivity in loop");
+
+    if (!time_ready)
+    {
+      Serial.println("Time sync failed.");
+      Serial.println("Retrying in 3 seconds...");
+      delay(3000);
+    }
   }
 
-  sim_ready = initAlertModule();
+  digitalWrite(GREEN_LED, HIGH);
+  delay(500);
 
-  if (SEND_TEST_SMS_ON_BOOT)
-    sendStartupTestSms();
+  initFirebase();
+  firebase_ready = true;
+
+  // sim_ready = initAlertModule();
+
+  // if (SEND_TEST_SMS_ON_BOOT)
+  //   sendStartupTestSms();
 
   initWaveformDisplay(lcd);
 
@@ -156,8 +92,7 @@ void loop()
     return;
 
   last_loop_time = millis();
-  ensureServices();
-  fetchRemoteNodes();
+  fetchRemoteNodes(firebase_ready);
   pollAlertModule();
 
   float temp, hum;
