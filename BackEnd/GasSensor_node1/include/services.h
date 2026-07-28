@@ -18,7 +18,10 @@ struct RemoteSnapshot
 };
 
 bool initWiFi();
+bool isWiFiConnected();
+uint32_t getWiFiDisconnectEventCount();
+uint32_t getWiFiGotIpEventCount();
 bool initTime();
 void initFirebase();
-void uploadData(float temperature, float humidity, int gas, float deltaGas, float gasRelative, int state, const tm &info);
+bool uploadData(float temperature, float humidity, int gas, float deltaGas, float gasRelative, int state, const tm &info);
 bool readRemoteSnapshot(const char *deviceId, RemoteSnapshot &snapshot);

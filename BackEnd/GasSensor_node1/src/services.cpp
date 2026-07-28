@@ -14,6 +14,30 @@ namespace
   FirebaseData fbdo;
   FirebaseAuth auth;
   FirebaseConfig config;
+  volatile uint32_t wifiDisconnectEventCount = 0;
+  volatile uint32_t wifiGotIpEventCount = 0;
+  bool wifiEventsRegistered = false;
+
+  void handleWiFiEvent(WiFiEvent_t event)
+  {
+    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
+    {
+      wifiDisconnectEventCount++;
+    }
+    else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
+    {
+      wifiGotIpEventCount++;
+    }
+  }
+
+  void ensureWiFiEvents()
+  {
+    if (wifiEventsRegistered)
+      return;
+
+    WiFi.onEvent(handleWiFiEvent);
+    wifiEventsRegistered = true;
+  }
 
   bool getRequiredFloat(FirebaseJson &json, const char *key, float &value)
   {
@@ -70,6 +94,7 @@ bool initWiFi()
 {
   Serial.println("=== WiFi Init ===");
 
+  ensureWiFiEvents();
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(true, true);
   delay(1000);
@@ -100,6 +125,21 @@ bool initWiFi()
   delay(2000);
 
   return true;
+}
+
+bool isWiFiConnected()
+{
+  return WiFi.status() == WL_CONNECTED;
+}
+
+uint32_t getWiFiDisconnectEventCount()
+{
+  return wifiDisconnectEventCount;
+}
+
+uint32_t getWiFiGotIpEventCount()
+{
+  return wifiGotIpEventCount;
 }
 
 bool initTime()
@@ -162,7 +202,7 @@ void initFirebase()
   Serial.println("Firebase Ready");
 }
 
-void uploadData(float temperature,
+bool uploadData(float temperature,
                 float humidity,
                 int gas,
                 float deltaGas,
@@ -170,26 +210,22 @@ void uploadData(float temperature,
                 int state,
                 const tm &info)
 {
-  if (!Firebase.ready())
-    return;
+  if (!isWiFiConnected() || !Firebase.ready())
+    return false;
 
-  // Keep date folders sortable.
-  char dateString[16];
+  char dateString[16], timeKey[16], path[120];
   strftime(
       dateString,
       sizeof(dateString),
       "%Y-%m-%d",
       &info);
 
-  // Time is the child key inside each date folder.
-  char timeKey[16];
   strftime(
       timeKey,
       sizeof(timeKey),
       "%H-%M-%S",
       &info);
 
-  char path[120];
   snprintf(
       path,
       sizeof(path),
@@ -213,11 +249,13 @@ void uploadData(float temperature,
     Serial.print("Time: ");
     Serial.println(timeKey);
     Serial.println("----------------------------------------------");
+    return true;
   }
   else
   {
     Serial.println("Upload Failed");
     Serial.println(fbdo.errorReason());
+    return false;
   }
 }
 
@@ -234,7 +272,7 @@ bool readRemoteSnapshot(const char *deviceId, RemoteSnapshot &snapshot)
   snapshot.state = 0;
   snapshot.valid = false;
 
-  if (!Firebase.ready())
+  if (!isWiFiConnected() || !Firebase.ready())
     return false;
 
   char path[64];
