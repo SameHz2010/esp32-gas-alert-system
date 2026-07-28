@@ -11,7 +11,7 @@ int sampleGasSensor()
   // Lấy mẫu
   for (int i = 0; i < sampleCount; i++)
   {
-    samples[i] = analogRead(MQ2A_PIN);
+    samples[i] = analogRead(MQ7_PIN);
     delay(3);
   }
 
@@ -41,7 +41,7 @@ int sampleGasSensor()
 
 int detectGasState(float temperature, float humidity, int gas, float deltaGas, float gasRelative)
 {
-  bool harshEnv = (humidity > 90.0f || temperature > 50.0f || temperature < 0.0f);
+  bool harshEnv = (humidity > 90.0f || temperature > 50.0f || temperature < 10.0f);
 
   // Sensor có thể bị ảnh hưởng môi trường mạnh
   if (harshEnv && gas < GAS_WARNING_THRESHOLD)

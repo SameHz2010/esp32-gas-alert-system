@@ -11,7 +11,7 @@ int sampleGasSensor()
   // Lấy mẫu
   for (int i = 0; i < sampleCount; i++)
   {
-    samples[i] = analogRead(MQ2A_PIN);
+    samples[i] = analogRead(MQ7_PIN);
     delay(3);
   }
 
