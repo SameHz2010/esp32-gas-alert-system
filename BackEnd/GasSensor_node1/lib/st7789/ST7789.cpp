@@ -1,36 +1,52 @@
 #include "ST7789.h"
+#include "esp_err.h"
 #include <string.h>
 #include "fonts.h"
 
 #define LCD_W 240
 #define LCD_H 240
 
+namespace
+{
+    bool lcdTransmit(spi_device_handle_t spi, const void *buffer, size_t bitLength)
+    {
+        if (spi == nullptr || buffer == nullptr || bitLength == 0)
+            return false;
+
+        spi_transaction_t t;
+        memset(&t, 0, sizeof(t));
+        t.length = bitLength;
+        t.rxlength = 0;
+        t.tx_buffer = buffer;
+        t.rx_buffer = nullptr;
+
+        esp_err_t result = spi_device_transmit(spi, &t);
+        if (result != ESP_OK)
+        {
+            Serial.printf("LCD SPI transmit failed: %s\n", esp_err_to_name(result));
+            return false;
+        }
+
+        return true;
+    }
+}
+
 ST7789::ST7789(uint8_t cs, uint8_t dc, uint8_t rst, uint8_t blk)
-    : _cs(cs), _dc(dc), _rst(rst), _blk(blk) {}
+    : spi(nullptr), _cs(cs), _dc(dc), _rst(rst), _blk(blk) {}
 
 // ===== LOW LEVEL =====
 void ST7789::writeCommand(uint8_t cmd)
 {
     digitalWrite(_dc, LOW);
 
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
-    t.length = 8;
-    t.tx_buffer = &cmd;
-
-    spi_device_transmit(spi, &t);
+    lcdTransmit(spi, &cmd, 8);
 }
 
 void ST7789::writeData(uint8_t data)
 {
     digitalWrite(_dc, HIGH);
 
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
-    t.length = 8;
-    t.tx_buffer = &data;
-
-    spi_device_transmit(spi, &t);
+    lcdTransmit(spi, &data, 8);
 }
 
 // ===== INIT =====
@@ -53,17 +69,31 @@ void ST7789::begin()
     buscfg.sclk_io_num = 18;
     buscfg.quadwp_io_num = -1;
     buscfg.quadhd_io_num = -1;
+    buscfg.max_transfer_sz = LCD_W * LCD_H * 2;
 
-    spi_bus_initialize(VSPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    esp_err_t busResult = spi_bus_initialize(VSPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+    if (busResult != ESP_OK && busResult != ESP_ERR_INVALID_STATE)
+    {
+        Serial.printf("LCD SPI bus init failed: %s\n", esp_err_to_name(busResult));
+        spi = nullptr;
+        return;
+    }
 
     spi_device_interface_config_t devcfg;
     memset(&devcfg, 0, sizeof(devcfg));
     devcfg.clock_speed_hz = 40000000;
     devcfg.mode = 0;
     devcfg.spics_io_num = _cs;
+    devcfg.flags = SPI_DEVICE_HALFDUPLEX;
     devcfg.queue_size = 7;
 
-    spi_bus_add_device(VSPI_HOST, &devcfg, &spi);
+    esp_err_t deviceResult = spi_bus_add_device(VSPI_HOST, &devcfg, &spi);
+    if (deviceResult != ESP_OK)
+    {
+        Serial.printf("LCD SPI add device failed: %s\n", esp_err_to_name(deviceResult));
+        spi = nullptr;
+        return;
+    }
 
     // reset LCD
     digitalWrite(_rst, LOW);
@@ -95,12 +125,8 @@ void ST7789::setAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
         (uint8_t)(x0 >> 8), (uint8_t)(x0 & 0xFF),
         (uint8_t)(x1 >> 8), (uint8_t)(x1 & 0xFF)};
 
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
     digitalWrite(_dc, HIGH);
-    t.length = 32;
-    t.tx_buffer = data_col;
-    spi_device_transmit(spi, &t);
+    lcdTransmit(spi, data_col, 32);
 
     writeCommand(0x2B);
 
@@ -108,11 +134,8 @@ void ST7789::setAddrWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
         (uint8_t)(y0 >> 8), (uint8_t)(y0 & 0xFF),
         (uint8_t)(y1 >> 8), (uint8_t)(y1 & 0xFF)};
 
-    memset(&t, 0, sizeof(t));
     digitalWrite(_dc, HIGH);
-    t.length = 32;
-    t.tx_buffer = data_row;
-    spi_device_transmit(spi, &t);
+    lcdTransmit(spi, data_row, 32);
 
     writeCommand(0x2C);
 }
@@ -127,13 +150,8 @@ void ST7789::drawPixel(uint16_t x, uint16_t y, uint16_t color)
 
     uint16_t c = __builtin_bswap16(color);
 
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
     digitalWrite(_dc, HIGH);
-    t.length = 16;
-    t.tx_buffer = &c;
-
-    spi_device_transmit(spi, &t);
+    lcdTransmit(spi, &c, 16);
 }
 
 // ===== FAST FILL (DMA) =====
@@ -154,17 +172,10 @@ void ST7789::fillScreen(uint16_t color)
         buffer[i] = c;
     }
 
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
-
     for (int i = 0; i < pixels; i += chunk)
     {
         int size = (pixels - i > chunk) ? chunk : (pixels - i);
-
-        t.length = size * 16;
-        t.tx_buffer = buffer;
-
-        spi_device_transmit(spi, &t);
+        lcdTransmit(spi, buffer, size * 16);
     }
 }
 
@@ -256,10 +267,7 @@ void ST7789::drawBitmap(int x, int y, const uint16_t *img, int w, int h, uint16_
             if (index >= CHUNK)
             {
                 // Gửi buffer
-                spi_transaction_t t = {};
-                t.length = index * 16;
-                t.tx_buffer = buffer;
-                spi_device_transmit(spi, &t);
+                lcdTransmit(spi, buffer, index * 16);
                 index = 0;
             }
         }
@@ -267,10 +275,7 @@ void ST7789::drawBitmap(int x, int y, const uint16_t *img, int w, int h, uint16_
 
     if (index > 0)
     {
-        spi_transaction_t t = {};
-        t.length = index * 16;
-        t.tx_buffer = buffer;
-        spi_device_transmit(spi, &t);
+        lcdTransmit(spi, buffer, index * 16);
     }
 }
 
@@ -298,11 +303,7 @@ void ST7789::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color
     while (total > 0)
     {
         int size = (total > CHUNK) ? CHUNK : total;
-        spi_transaction_t t;
-        memset(&t, 0, sizeof(t));
-        t.length = size * 16;
-        t.tx_buffer = buffer;
-        spi_device_transmit(spi, &t);
+        lcdTransmit(spi, buffer, size * 16);
         total -= size;
     }
 }
