@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "secrets.h"
 #include "config.h"
 #include "monitoring.h"
@@ -11,8 +13,87 @@ namespace
   HardwareSerial simSerial(2);
   String feedback;
   bool simReady = false;
+  SemaphoreHandle_t simMutex = nullptr;
+  volatile bool buzzerMuteRequest = false;
+  bool buzzerDangerActive = false;
+  bool buzzerMuteActive = false;
+  unsigned long buzzerMutedAt = 0;
 
-  String readSIMFeedback(unsigned long timeoutMs = 1500, bool printIfEmpty = true)
+  bool isBuzzerMuted()
+  {
+    if (!buzzerMuteActive)
+      return false;
+
+    if (millis() - buzzerMutedAt < BUZZER_MUTE_MS)
+      return true;
+
+    buzzerMuteActive = false;
+    return false;
+  }
+
+  // mute buzzer for 5 minutes
+  void muteBuzzerForCooldown()
+  {
+    buzzerMuteActive = true;
+    buzzerMutedAt = millis();
+    digitalWrite(BUZZER, LOW);
+
+    Serial.println("Buzzer muted for 5 minutes");
+  }
+
+  // ISR for buzzer button press
+  void IRAM_ATTR handleBuzzerButtonInterrupt()
+  {
+    buzzerMuteRequest = true;
+    digitalWrite(BUZZER, LOW);
+  }
+
+  bool ensureSimMutex()
+  {
+    if (simMutex != nullptr)
+      return true;
+
+    simMutex = xSemaphoreCreateMutex();
+    if (simMutex == nullptr)
+    {
+      Serial.println("SIM mutex create failed");
+      return false;
+    }
+
+    return true;
+  }
+
+  bool lockSim(TickType_t timeoutTicks)
+  {
+    if (!ensureSimMutex())
+      return false;
+
+    return xSemaphoreTake(simMutex, timeoutTicks) == pdTRUE;
+  }
+
+  void unlockSim()
+  {
+    if (simMutex != nullptr)
+      xSemaphoreGive(simMutex);
+  }
+
+  void drainSIMInput(unsigned long quietMs = 50)
+  {
+    unsigned long lastRead = millis();
+
+    while (millis() - lastRead < quietMs)
+    {
+      while (simSerial.available())
+      {
+        simSerial.read();
+        lastRead = millis();
+      }
+
+      delay(5);
+    }
+  }
+
+  String readSIMFeedback(unsigned long timeoutMs = 1000, bool printIfEmpty = true)
   {
     unsigned long start = millis();
     feedback = "";
@@ -40,55 +121,229 @@ namespace
     return feedback;
   }
 
-  bool responseHasSuccess(const String &response)
+  String readSIMFeedbackUntil(const char *token, unsigned long timeoutMs = 1000, bool printIfEmpty = true)
   {
-    return response.indexOf("OK") >= 0 || response.indexOf(">") >= 0;
+    unsigned long start = millis();
+    feedback = "";
+
+    while (millis() - start < timeoutMs)
+    {
+      while (simSerial.available())
+      {
+        char c = (char)simSerial.read();
+        feedback += c;
+
+        if (feedback.indexOf(token) >= 0)
+          break;
+      }
+
+      if (feedback.indexOf(token) >= 0)
+        break;
+
+      delay(5);
+    }
+
+    if (feedback.length() > 0)
+    {
+      Serial.println(">> SIM Response:");
+      Serial.println(feedback);
+    }
+    else if (printIfEmpty)
+    {
+      Serial.println(">> No response");
+    }
+
+    return feedback;
   }
 
-  bool sendAT(const String &cmd, unsigned long waitMs = 1000)
+  bool responseHasOk(const String &response)
   {
+    return response.indexOf("OK") >= 0;
+  }
+
+  bool responseHasError(const String &response)
+  {
+    return response.indexOf("ERROR") >= 0 || response.indexOf("+CMS ERROR") >= 0 || response.indexOf("+CME ERROR") >= 0;
+  }
+
+  bool responseHasSmsSent(const String &response)
+  {
+    return response.indexOf("+CMGS:") >= 0 || responseHasOk(response);
+  }
+
+  String sendATRead(const char *cmd, unsigned long waitMs = 1000, unsigned long readMs = 1000)
+  {
+    drainSIMInput();
+
     Serial.print("<< ");
     Serial.println(cmd);
     simSerial.print(cmd);
     simSerial.print("\r\n");
     delay(waitMs);
 
-    String response = readSIMFeedback();
-    return responseHasSuccess(response);
+    String response = readSIMFeedback(readMs);
+    return response;
   }
+
+  bool runSimSetup()
+  {
+    simReady = false;
+
+    String response = "";
+    for (int attempt = 0; attempt < 5; attempt++)
+    {
+      response = sendATRead("AT", 500, 1500);
+      if (responseHasOk(response))
+        break;
+
+      delay(1000);
+    }
+
+    if (!responseHasOk(response))
+    {
+      Serial.println("SIM setup failed: AT did not return OK");
+      return false;
+    }
+
+    sendATRead("ATE0", 500, 1500);
+    sendATRead("AT+CMEE=2", 500, 1500);
+    sendATRead("AT+CPIN?", 500, 2000);
+    sendATRead("AT+CSCS=\"GSM\"", 500, 1500);
+    sendATRead("AT+CMGF=1", 500, 1500);
+    sendATRead("AT+CNMI=2,2,0,0,0", 500, 1500);
+
+    String deleteResponse = sendATRead("AT+CMGD=1,4", 500, 3000);
+    if (responseHasError(deleteResponse))
+      Serial.println("SMS storage cleanup skipped. This is not fatal.");
+
+    sendATRead("AT+CLIP=1", 500, 1500);
+    sendATRead("AT&W", 500, 2000);
+    sendATRead("AT+CSQ", 500, 2000);
+
+    simReady = true;
+    return true;
+  }
+
+  bool sendSmsMessage(const char *message)
+  {
+    if (!lockSim(pdMS_TO_TICKS(45000)))
+    {
+      Serial.println("SMS failed: SIM UART is busy");
+      return false;
+    }
+
+    bool sent = false;
+
+    do
+    {
+      if (!simReady && !runSimSetup())
+      {
+        Serial.println("SMS failed: SIM setup is not ready");
+        break;
+      }
+
+      Serial.println("<< Send SMS");
+      drainSIMInput();
+
+      simSerial.print("AT+CMGS=\"");
+      simSerial.print(ALERT_PHONE_NUMBER);
+      simSerial.print("\"\r");
+
+      String promptResponse = readSIMFeedbackUntil(">", 5000);
+      if (promptResponse.indexOf(">") < 0)
+      {
+        Serial.println("SMS failed: SIM module did not show SMS prompt");
+        break;
+      }
+
+      simSerial.print(message);
+      delay(100);
+      simSerial.write(26);
+
+      String response = readSIMFeedback(30000);
+      if (!responseHasSmsSent(response) || responseHasError(response))
+      {
+        Serial.println("SMS failed: SIM module did not confirm message send");
+        break;
+      }
+
+      sent = true;
+    } while (false);
+
+    unlockSim();
+    return sent;
+  }
+}
+
+void initBuzzerButton()
+{
+  pinMode(BUZZER_BUTTON_PIN, INPUT_PULLUP);
+  attachInterrupt(
+      digitalPinToInterrupt(BUZZER_BUTTON_PIN),
+      handleBuzzerButtonInterrupt,
+      FALLING);
+
+  Serial.printf("Buzzer button ready on GPIO%d\n", BUZZER_BUTTON_PIN);
+}
+
+// Cập nhật trạng thái nút nhấn và mute buzzer
+void updateBuzzerButton()
+{
+  static unsigned long lastAcceptedPressAt = 0;
+  bool buttonPressed = false;
+
+  // khoá ISR để tránh xung đột với việc đọc nút nhấn
+  noInterrupts();
+  if (buzzerMuteRequest)
+  {
+    buzzerMuteRequest = false;
+    buttonPressed = true;
+  }
+  interrupts();
+
+  // nếu ISR bị bỏ lỡ, kiểm tra trực tiếp nút nhấn
+  if (digitalRead(BUZZER_BUTTON_PIN) == LOW)
+    buttonPressed = true;
+
+  // nếu nút không nhấn hoặc đang trong thời gian mute, bỏ qua
+  if (!buttonPressed || isBuzzerMuted())
+    return;
+
+  // kiểm tra chống rung nút nhấn
+  unsigned long now = millis();
+  if (now - lastAcceptedPressAt < BUTTON_DEBOUNCE_MS)
+    return;
+
+  // ghi nhận lần nhấn nút hợp lệ và mute buzzer
+  lastAcceptedPressAt = now;
+  Serial.println("Buzzer button pressed");
+  muteBuzzerForCooldown(); // mute buzzer for 5 minutes
 }
 
 bool initAlertModule()
 {
+  ensureSimMutex();
   simSerial.begin(SIM_BAUD_RATE, SERIAL_8N1, SIM_RX_PIN, SIM_TX_PIN);
   delay(1000);
 
   Serial.printf("Waiting for 4G signal on %lus...\n", SIM_BOOT_WAIT_MS / 1000UL);
   delay(SIM_BOOT_WAIT_MS);
 
-  simReady = sendAT("AT");
+  simReady = runSimSetup();
   if (!simReady)
   {
     Serial.println("SIM module is not responding on UART.");
     return false;
   }
-
-  simReady = true;
-  sendAT("ATE0");
-  sendAT("AT+CSCS=\"GSM\"");
-  sendAT("AT+CMGF=1");
-  sendAT("AT+CNMI=2,2,0,0,0");
-  sendAT("AT+CMGD=1");
-  sendAT("AT+CLIP=1");
-  sendAT("AT&W");
-  sendAT("AT+CSQ");
-
   return true;
 }
 
 void pollAlertModule()
 {
-  if (!simReady || !simSerial.available())
+  if (!simSerial.available())
+    return;
+
+  if (!lockSim(0))
     return;
 
   feedback = "";
@@ -102,6 +357,8 @@ void pollAlertModule()
     Serial.println(">> Async SIM:");
     Serial.println(feedback);
   }
+
+  unlockSim();
 }
 
 int sampleGasSensor()
@@ -111,7 +368,7 @@ int sampleGasSensor()
 
   for (int i = 0; i < sampleCount; i++)
   {
-    samples[i] = analogRead(MQ2A_PIN);
+    samples[i] = analogRead(MQ7_PIN);
     delay(3);
   }
 
@@ -148,7 +405,7 @@ int detectGasState(float temperature, float humidity, int gas, float deltaGas, f
   if (gas >= GAS_DANGER_THRESHOLD && (deltaGas > 60.0f || gasRelative > 1.15f))
     return 3;
 
-  if (gas >= GAS_WARNING_THRESHOLD && (deltaGas > 35.0f || gasRelative > 1.02f))
+  if (gas >= GAS_WARNING_THRESHOLD && (deltaGas > 35.0f || gasRelative > 1.07f))
     return 2;
 
   if (gas >= GAS_SAFE_THRESHOLD || deltaGas > 20.0f || gasRelative > 1.03f)
@@ -169,82 +426,78 @@ void alertControl(int state)
   }
 
   if (state == 2 || state == 3 || state == 4)
-    digitalWrite(RED_LED, ledState ? HIGH : LOW);
+    digitalWrite(WARNING_LED, ledState ? HIGH : LOW);
   else
-    digitalWrite(RED_LED, LOW);
+    digitalWrite(WARNING_LED, LOW);
 
-  digitalWrite(BUZZER, (state == 3) ? HIGH : LOW);
+  buzzerDangerActive = (state == 3);
+
+  Serial.printf("Muted=%d\n", isBuzzerMuted());
+
+  if (buzzerDangerActive && !isBuzzerMuted())
+  {
+    Serial.println("BUZZER HIGH");
+    digitalWrite(BUZZER, HIGH);
+  }
+  else
+  {
+    Serial.println("BUZZER LOW");
+    digitalWrite(BUZZER, LOW);
+  }
+
+  Serial.printf("state=%d mute=%d active=%d\n",
+                state,
+                isBuzzerMuted(),
+                buzzerDangerActive);
 }
 
 void sendStartupTestSms()
 {
-  if (!simReady)
-  {
-    Serial.println("Startup SMS skipped: SIM module is not ready");
-    return;
-  }
+  char startupMsg[128];
+  snprintf(startupMsg, sizeof(startupMsg), "%s: module SIM da khoi dong thanh cong", DEVICE_ID);
+  sendSystemSms(startupMsg);
+}
 
-  Serial.println("<< Send startup SMS");
-  simSerial.print("AT+CMGS=\"");
-  simSerial.print(ALERT_PHONE_NUMBER);
-  simSerial.print("\"\r");
-  delay(500);
+bool sendSystemSms(const char *message)
+{
+  if (message == nullptr || message[0] == '\0')
+    return false;
 
-  String response = readSIMFeedback(1000);
-  if (response.indexOf(">") < 0)
-  {
-    Serial.println("Startup SMS failed: SIM module did not enter message mode");
-    return;
-  }
+  return sendSmsMessage(message);
+}
 
-  char startupMsg[96];
-  snprintf(startupMsg, sizeof(startupMsg), "%s khoi dong he thong canh bao gas", DEVICE_ID);
-  simSerial.print(startupMsg);
-  delay(300);
-  simSerial.write(26);
-  delay(3000);
-  readSIMFeedback(5000);
+bool sendAlertSms(const char *sourceDevice,
+                  int gasValue,
+                  float temperature,
+                  float humidity,
+                  const char *timeText,
+                  unsigned long &lastSmsTime,
+                  int state)
+{
+  if (lastSmsTime != 0 && millis() - lastSmsTime < SMS_COOLDOWN)
+    return false;
+
+  char alertMsg[180];
+  snprintf(alertMsg,
+           sizeof(alertMsg),
+           "CANH BAO GAS! %s S=%d Gas=%d T=%.1fC H=%.1f%% Time=%s",
+           sourceDevice,
+           state,
+           gasValue,
+           temperature,
+           humidity,
+           (timeText != nullptr && timeText[0] != '\0') ? timeText : "-");
+
+  if (!sendSmsMessage(alertMsg))
+    return false;
+
+  lastSmsTime = millis();
+  return true;
 }
 
 bool sendAlertSms(const char *sourceDevice, int gasValue, unsigned long &lastSmsTime, int state)
 {
-  if (!simReady)
-  {
-    Serial.println("SIM SMS skipped: SIM module is not ready");
-    return false;
-  }
-
-  if (lastSmsTime != 0 && millis() - lastSmsTime < SMS_COOLDOWN)
-    return false;
-
-  Serial.println("<< Send alert SMS");
-  simSerial.print("AT+CMGS=\"");
-  simSerial.print(ALERT_PHONE_NUMBER);
-  simSerial.print("\"\r");
-  delay(500);
-
-  String response = readSIMFeedback(1000);
-  if (response.indexOf(">") < 0)
-  {
-    Serial.println("Alert SMS failed: SIM module did not enter message mode");
-    return false;
-  }
-
-  char alertMsg[128];
-  snprintf(alertMsg, sizeof(alertMsg), "CANH BAO GAS! %s State=%d Gas=%d", sourceDevice, state, gasValue);
-  simSerial.print(alertMsg);
-  delay(300);
-  simSerial.write(26);
-  delay(3000);
-  String finalResponse = readSIMFeedback(5000);
-  if (!responseHasSuccess(finalResponse))
-  {
-    Serial.println("Alert SMS failed: SIM module did not confirm message send");
-    return false;
-  }
-
-  lastSmsTime = millis();
-  return true;
+  return sendAlertSms(sourceDevice, gasValue, 0.0f, 0.0f, "-", lastSmsTime, state);
 }
 
 bool sendAlertSms(int gasValue, unsigned long &lastSmsTime, int state)
@@ -254,14 +507,21 @@ bool sendAlertSms(int gasValue, unsigned long &lastSmsTime, int state)
 
 void placeAlertCall(unsigned long &lastCallTime)
 {
-  if (!simReady)
+  if (millis() - lastCallTime < CALL_COOLDOWN)
+    return;
+
+  if (!lockSim(pdMS_TO_TICKS(15000)))
   {
-    Serial.println("SIM call skipped: SIM module is not ready");
+    Serial.println("SIM call skipped: SIM UART is busy");
     return;
   }
 
-  if (millis() - lastCallTime < CALL_COOLDOWN)
+  if (!simReady && !runSimSetup())
+  {
+    Serial.println("SIM call skipped: SIM module is not ready");
+    unlockSim();
     return;
+  }
 
   Serial.println("<< Call alert");
   simSerial.print("ATD");
@@ -277,4 +537,5 @@ void placeAlertCall(unsigned long &lastCallTime)
   readSIMFeedback(2000, false);
 
   lastCallTime = millis();
+  unlockSim();
 }

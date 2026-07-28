@@ -78,7 +78,7 @@ void updateWaveform(ST7789 &lcd, int new_gas_val, int state, struct tm *timeinfo
     sprintf(buf, "MIN:%-4d", min_val);
     lcd.drawString(180, WAVE_Y + WAVE_H - 15, buf, 0x7BEF, COLOR_BLACK);
 
-    if (timeinfo->tm_year > 0)
+    if (timeinfo != nullptr && timeinfo->tm_year > 0)
     {
         sprintf(buf, "%02d:%02d:%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
         lcd.drawString(170, 220, buf, COLOR_CYAN, COLOR_BLACK);
