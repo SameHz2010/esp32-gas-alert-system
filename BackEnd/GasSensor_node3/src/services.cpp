@@ -140,6 +140,13 @@ void uploadData(float temperature,
       "%H-%M-%S",
       &info);
 
+  char timeString[24];
+  strftime(
+      timeString,
+      sizeof(timeString),
+      "%H:%M:%S %d/%m/%Y",
+      &info);
+
   char path[120];
   snprintf(
       path,
@@ -165,8 +172,17 @@ void uploadData(float temperature,
   json.set("gas_relative", gasRelative);
   json.set("label", state);
 
+  FirebaseJson latestJson;
+  latestJson.set("temperature", temperature);
+  latestJson.set("humidity", humidity);
+  latestJson.set("gas", gas);
+  latestJson.set("delta_gas", deltaGas);
+  latestJson.set("gas_relative", gasRelative);
+  latestJson.set("label", state);
+  latestJson.set("time", timeString);
+
   // ghi latest, mỗi lần sẽ ghi đè nên chỉ có 1 JSON
-  if (Firebase.RTDB.setJSON(&fbdo, latestPath, &json))
+  if (Firebase.RTDB.setJSON(&fbdo, latestPath, &latestJson))
   {
     Serial.println("Latest room3 updated");
   }
