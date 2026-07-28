@@ -1,6 +1,6 @@
 #pragma once
 
-#define MQ2A_PIN 34
+#define MQ7_PIN 34
 #define RED_LED 15
 #define BUZZER 27
 #define SDA_PIN 21 // GPIO4
@@ -13,5 +13,4 @@ constexpr unsigned long NTP_SYNC_TIMEOUT_MS = 10000UL;
 
 constexpr int GAS_SAFE_THRESHOLD = 650;
 constexpr int GAS_WARNING_THRESHOLD = 800;
-constexpr int GAS_DANGER_THRESHOLD = 100;
-
+constexpr int GAS_DANGER_THRESHOLD = 1000;
