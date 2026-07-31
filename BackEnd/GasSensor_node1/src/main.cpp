@@ -18,7 +18,7 @@ bool firebase_ready = false;
 bool sim_ready = false;
 
 ST7789 lcd(ST7789_CS_PIN, ST7789_DC_PIN, ST7789_RST_PIN, ST7789_BLK_PIN);
-
+ 
 namespace
 {
   bool firebase_initialized = false;
