@@ -7,9 +7,9 @@
 #define ST7789_RST_PIN 4
 #define ST7789_BLK_PIN 15
 
-#define LED_DHT20 32
+#define LED_DHT20 25
 #define LED_WIFI 33
-#define LED_SIM 25
+#define LED_SIM 32
 #define WARNING_LED 26
 
 #define BUZZER 27
@@ -31,14 +31,12 @@ constexpr unsigned long CALL_COOLDOWN = 600000UL;
 constexpr unsigned long LOOP_INTERVAL_MS = 1000UL;
 constexpr unsigned long REMOTE_FETCH_INTERVAL_MS = 1000UL;
 
-
 constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000UL;
 constexpr unsigned long NTP_SYNC_TIMEOUT_MS = 10000UL;
 
-
 constexpr unsigned long SIM_BOOT_WAIT_MS = 15000UL;
 constexpr unsigned long SIM_CALL_RING_MS = 10000UL;
-constexpr unsigned long BUZZER_MUTE_MS = 300000UL;
+constexpr unsigned long BUZZER_MUTE_MS = 10000UL;
 constexpr unsigned long BUTTON_DEBOUNCE_MS = 50UL;
 constexpr unsigned long ONLINE_SERVICE_RETRY_MS = 30000UL;
 constexpr unsigned long WIFI_LOSS_CONFIRM_MS = 5000UL;
