@@ -6,19 +6,52 @@
 #include "config.h"
 #include "services.h"
 
+#define WIFI_CONNECT_TIMEOUT_MS 15000
+#define NTP_SYNC_TIMEOUT_MS 15000
+
 namespace
 {
   FirebaseData fbdo;
   FirebaseAuth auth;
   FirebaseConfig config;
+
+  // Các biến đếm sự kiện ngắt/kết nối WiFi bất đồng bộ
+  volatile uint32_t wifiDisconnectEventCount = 0;
+  volatile uint32_t wifiGotIpEventCount = 0;
+  bool wifiEventsRegistered = false;
+
+  // Callback xử lý sự kiện mạng WiFi
+  void handleWiFiEvent(WiFiEvent_t event)
+  {
+    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
+    {
+      wifiDisconnectEventCount++;
+    }
+    else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
+    {
+      wifiGotIpEventCount++;
+    }
+  }
+
+  // Đăng ký sự kiện WiFi
+  void ensureWiFiEvents()
+  {
+    if (wifiEventsRegistered)
+      return;
+
+    WiFi.onEvent(handleWiFiEvent);
+    wifiEventsRegistered = true;
+  }
 }
 
+// Khởi tạo WiFi
 bool initWiFi()
 {
   Serial.println("=== WiFi Init ===");
 
+  ensureWiFiEvents();
   WiFi.mode(WIFI_STA);
-  WiFi.disconnect(true, true); // clear old state
+  WiFi.disconnect(true, true); // Xóa thông tin AP cũ
   delay(1000);
 
   WiFi.begin(SSID, PASSWORD);
@@ -43,17 +76,36 @@ bool initWiFi()
   Serial.print("[OK] WiFi connected, IP: ");
   Serial.println(WiFi.localIP());
 
-  // cực quan trọng: đợi network ổn định
+  // Chờ đường truyền mạng ổn định trước khi dùng NTP/Firebase
   delay(2000);
 
   return true;
 }
 
+// Kiểm tra trạng thái kết nối WiFi
+bool isWiFiConnected()
+{
+  return WiFi.status() == WL_CONNECTED;
+}
+
+// Lấy số lần ngắt kết nối WiFi
+uint32_t getWiFiDisconnectEventCount()
+{
+  return wifiDisconnectEventCount;
+}
+
+// Lấy số lần nhận IP thành công
+uint32_t getWiFiGotIpEventCount()
+{
+  return wifiGotIpEventCount;
+}
+
+// Đồng bộ thời gian qua máy chủ NTP
 bool initTime()
 {
   Serial.println("=== NTP Init ===");
 
-  // GMT+7
+  // Cấu hình múi giờ GMT+7
   configTime(
       7 * 3600,
       0,
@@ -98,6 +150,7 @@ bool initTime()
   }
 }
 
+// Khởi tạo kết nối tới Firebase Realtime Database
 void initFirebase()
 {
   config.api_key = API_KEY;
@@ -110,7 +163,8 @@ void initFirebase()
   Serial.println("Firebase Ready");
 }
 
-void uploadData(float temperature,
+// Tải dữ liệu cảm biến Node 2 lên Firebase
+bool uploadData(float temperature,
                 float humidity,
                 int gas,
                 float deltaGas,
@@ -118,50 +172,31 @@ void uploadData(float temperature,
                 int state,
                 const tm &info)
 {
-  if (!Firebase.ready())
-    return;
+  if (!isWiFiConnected() || !Firebase.ready())
+    return false;
 
-  // Use YYYY-MM-DD so Firebase string sorting matches chronological order
+  // Định dạng ngày: YYYY-MM-DD
   char dateString[16];
-  strftime(
-      dateString,
-      sizeof(dateString),
-      "%Y-%m-%d",
-      &info);
+  strftime(dateString, sizeof(dateString), "%Y-%m-%d", &info);
 
-  // Use HH-MM-SS as child folder name
+  // Định dạng thời gian cho key: HH-MM-SS
   char timeKey[16];
-  strftime(
-      timeKey,
-      sizeof(timeKey),
-      "%H-%M-%S",
-      &info);
+  strftime(timeKey, sizeof(timeKey), "%H-%M-%S", &info);
 
+  // Định dạng chuỗi thời gian hiển thị: HH:MM:SS DD/MM/YYYY
   char timeString[24];
-  strftime(
-      timeString,
-      sizeof(timeString),
-      "%H:%M:%S %d/%m/%Y",
-      &info);
+  strftime(timeString, sizeof(timeString), "%H:%M:%S %d/%m/%Y", &info);
 
+  // Đường dẫn lưu lịch sử: /devices/<DEVICE_ID>/<YYYY-MM-DD>/<HH-MM-SS>
   char path[120];
-  snprintf(
-      path,
-      sizeof(path),
-      "/devices/%s/%s/%s",
-      DEVICE_ID,
-      dateString,
-      timeKey);
+  snprintf(path, sizeof(path), "/devices/%s/%s/%s", DEVICE_ID, dateString, timeKey);
 
+  // Đường dẫn lưu trạng thái mới nhất: /latest_<DEVICE_ID>
   char latestPath[40];
-  snprintf(
-      latestPath,
-      sizeof(latestPath),
-      "/latest_%s",
-      DEVICE_ID);
+  snprintf(latestPath, sizeof(latestPath), "/latest_%s", DEVICE_ID);
 
+  // 1. Tạo JSON dữ liệu Lịch sử (History)
   FirebaseJson json;
-
   json.set("temperature", temperature);
   json.set("humidity", humidity);
   json.set("gas", gas);
@@ -169,6 +204,7 @@ void uploadData(float temperature,
   json.set("gas_relative", gasRelative);
   json.set("label", state);
 
+  // 2. Tạo JSON dữ liệu Mới nhất (Latest)
   FirebaseJson latestJson;
   latestJson.set("temperature", temperature);
   latestJson.set("humidity", humidity);
@@ -178,18 +214,17 @@ void uploadData(float temperature,
   latestJson.set("label", state);
   latestJson.set("time", timeString);
 
-  // ghi latest, mỗi lần sẽ ghi đè nên chỉ có 1 JSON
-  if (Firebase.RTDB.setJSON(&fbdo, latestPath, &latestJson))
+  bool uploadSuccess = true;
+
+  // Ghi đè vào mục /latest_<DEVICE_ID>
+  if (!Firebase.RTDB.setJSON(&fbdo, latestPath, &latestJson))
   {
-    Serial.println("Latest room2 updated");
-  }
-  else
-  {
-    Serial.println("Latest room2 update failed");
+    Serial.println("Latest update failed");
     Serial.println(fbdo.errorReason());
+    uploadSuccess = false;
   }
 
-  // ghi history như cũ
+  // Ghi dữ liệu vào mục Lịch sử
   if (Firebase.RTDB.setJSON(&fbdo, path, &json))
   {
     Serial.printf("Upload OK [%s_%s]\n", DEVICE_ID, dateString);
@@ -201,5 +236,8 @@ void uploadData(float temperature,
   {
     Serial.println("Upload Failed");
     Serial.println(fbdo.errorReason());
+    uploadSuccess = false;
   }
+
+  return uploadSuccess;
 }
