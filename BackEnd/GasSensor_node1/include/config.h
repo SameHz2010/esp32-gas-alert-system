@@ -13,7 +13,7 @@
 #define WARNING_LED 26
 
 #define BUZZER 27
-#define BUZZER_BUTTON_PIN 14
+#define BUZZER_BUTTON_PIN 13
 
 #define SDA_PIN 21
 #define SCL_PIN 22
