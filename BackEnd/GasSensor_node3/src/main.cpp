@@ -237,7 +237,7 @@ void loop()
   alertControl(state);
 
   // In thông tin ra Serial
-  Serial.println("--- THONG TIN CAM BIEN (NODE 2) ---");
+  Serial.println("--- THONG TIN CAM BIEN (NODE 3) ---");
   Serial.printf("Temp         : %.2f C\n", display_temp);
   Serial.printf("Humidity     : %.2f %%\n", display_hum);
   Serial.printf("Gas          : %d\n", gas);
